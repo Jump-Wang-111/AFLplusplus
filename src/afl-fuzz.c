@@ -546,9 +546,9 @@ int main(int argc, char **argv_orig, char **envp) {
 
   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
 
-  // still available: HjJkKqruvwz
+  // still available: HjJKqruvwz
   while ((opt = getopt(argc, argv,
-                       "+a:Ab:B:c:CdDe:E:f:F:g:G:hi:I:l:L:m:M:nNo:Op:P:QRs:S:t:"
+                       "+a:Ab:B:c:CdDe:E:f:F:g:G:hi:I:kl:L:m:M:nNo:Op:P:QRs:S:t:"
                        "T:UV:WXx:YzZ")) > 0) {
 
     switch (opt) {
@@ -574,6 +574,11 @@ int main(int argc, char **argv_orig, char **envp) {
 
         }
 
+        break;
+
+      /* CGI fuzz: add k option */
+      case 'k':
+        afl->cgi_fuzz = 1;
         break;
 
       case 'P':

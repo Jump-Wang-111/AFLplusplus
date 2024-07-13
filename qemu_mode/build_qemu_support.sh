@@ -70,35 +70,35 @@ echo "[+] All checks passed!"
 
 echo "[*] Making sure qemuafl is checked out"
 
-git status 1>/dev/null 2>/dev/null
-if [ $? -eq 0 ]; then
-  echo "[*] initializing qemuafl submodule"
-  git submodule init || exit 1
-  git submodule update ./qemuafl 2>/dev/null # ignore errors
-else
-  echo "[*] cloning qemuafl"
-  test -d qemuafl/.git || {
-    CNT=1
-    while [ '!' -d qemuafl/.git -a "$CNT" -lt 4 ]; do
-      echo "Trying to clone qemuafl (attempt $CNT/3)"
-      git clone --depth 1 https://github.com/Jump-Wang-111/qemuafl
-      CNT=`expr "$CNT" + 1`
-    done
-  }
-fi
+# git status 1>/dev/null 2>/dev/null
+# if [ $? -eq 0 ]; then
+#   echo "[*] initializing qemuafl submodule"
+#   git submodule init || exit 1
+#   git submodule update ./qemuafl 2>/dev/null # ignore errors
+# else
+#   echo "[*] cloning qemuafl"
+#   test -d qemuafl/.git || {
+#     CNT=1
+#     while [ '!' -d qemuafl/.git -a "$CNT" -lt 4 ]; do
+#       echo "Trying to clone qemuafl (attempt $CNT/3)"
+#       git clone --depth 1 https://github.com/Jump-Wang-111/qemuafl
+#       CNT=`expr "$CNT" + 1`
+#     done
+#   }
+# fi
 
-test -e qemuafl/.git || { echo "[-] Not checked out, please install git or check your internet connection." ; exit 1 ; }
+# test -e qemuafl/.git || { echo "[-] Not checked out, please install git or check your internet connection." ; exit 1 ; }
 echo "[+] Got qemuafl."
 
 cd "qemuafl" || exit 1
-if [ -n "$NO_CHECKOUT" ]; then
-  echo "[*] Skipping checkout to $QEMUAFL_VERSION"
-else
-  echo "[*] Checking out $QEMUAFL_VERSION"
-  sh -c 'git stash' 1>/dev/null 2>/dev/null
-  git pull
-  git checkout "$QEMUAFL_VERSION" || echo Warning: could not check out to commit $QEMUAFL_VERSION
-fi
+# if [ -n "$NO_CHECKOUT" ]; then
+#   echo "[*] Skipping checkout to $QEMUAFL_VERSION"
+# else
+#   echo "[*] Checking out $QEMUAFL_VERSION"
+#   sh -c 'git stash' 1>/dev/null 2>/dev/null
+#   git pull
+#   git checkout "$QEMUAFL_VERSION" || echo Warning: could not check out to commit $QEMUAFL_VERSION
+# fi
 
 echo "[*] Making sure imported headers matches"
 cp "../../include/config.h" "./qemuafl/imported/" || exit 1

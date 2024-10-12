@@ -446,6 +446,10 @@ u8 fuzz_one_original(afl_state_t *afl) {
       res =
           calibrate_case(afl, afl->queue_cur, in_buf, afl->queue_cycle - 1, 0);
 
+      /*  CGI fuzz: If the newly added queue directly causes a crash,
+          we need to record it. */
+      if (res == FSRV_RUN_CRASH) save_crash(afl, in_buf, len);
+
       if (unlikely(res == FSRV_RUN_ERROR)) {
 
         FATAL("Unable to execute target application");
@@ -469,6 +473,10 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   if (unlikely(!afl->non_instrumented_mode && !afl->queue_cur->trim_done &&
                !afl->disable_trim)) {
+    
+    /* cgi fuzz
+    ** trim input, just keep key-values which need to mutate*/
+    trim_cgi_input(afl->queue_cur, in_buf);
 
     u32 old_len = afl->queue_cur->len;
 
@@ -574,29 +582,49 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /* if skipdet decide to skip the seed or no interesting bytes found,
      we skip the whole deterministic stage as well */
 
-  if (likely(afl->skip_deterministic) || likely(afl->queue_cur->passed_det) ||
-      likely(!afl->queue_cur->skipdet_e->quick_eff_bytes) ||
-      likely(perf_score <
-             (afl->queue_cur->depth * 30 <= afl->havoc_max_mult * 100
-                  ? afl->queue_cur->depth * 30
-                  : afl->havoc_max_mult * 100))) {
+  // if (likely(afl->skip_deterministic) || likely(afl->queue_cur->passed_det) ||
+  //     likely(!afl->queue_cur->skipdet_e->quick_eff_bytes) ||
+  //     likely(perf_score <
+  //            (afl->queue_cur->depth * 30 <= afl->havoc_max_mult * 100
+  //                 ? afl->queue_cur->depth * 30
+  //                 : afl->havoc_max_mult * 100))) {
 
-    goto custom_mutator_stage;
+  //   goto custom_mutator_stage;
 
-  }
+  // }
 
   /* Skip deterministic fuzzing if exec path checksum puts this out of scope
      for this main instance. */
 
-  if (unlikely(afl->main_node_max &&
-               (afl->queue_cur->exec_cksum % afl->main_node_max) !=
-                   afl->main_node_id - 1)) {
+  // if (unlikely(afl->main_node_max &&
+  //              (afl->queue_cur->exec_cksum % afl->main_node_max) !=
+  //                  afl->main_node_id - 1)) {
 
-    goto custom_mutator_stage;
+  //   goto custom_mutator_stage;
 
-  }
+  // }
 
   doing_det = 1;
+
+  /*********************************************
+   * CGI RANGE *
+   *********************************************/
+  DEBUGF("CGI RANGE\n");
+  /*range_pair_array: queue, saves the range variables of this round
+    cgi_range: global, saves all range variables*/
+  for (int i = 0; i < RANGE_COUNT; i++) {
+    
+    if (!afl->queue_cur->range_pair_array[i]) continue;
+
+    char *old_value = afl->queue_cur->range_pair_array[i];
+    for (int j = 0; j < *(cgi_range[i].num); j++) {
+      // DEBUGF("cgi_range: %s\n", cgi_range[i].value[j]);
+      afl->queue_cur->range_pair_array[i] = cgi_range[i].value[j];
+      if (common_fuzz_stuff(afl, out_buf, len)) { goto abandon_entry; }
+    }
+
+    afl->queue_cur->range_pair_array[i] = old_value;
+  }
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *

@@ -49,7 +49,8 @@ extern u64 time_spent_working;
 static void at_exit() {
 
   s32   i, pid1 = 0, pid2 = 0, pgrp = -1;
-  char *list[4] = {SHM_ENV_VAR, SHM_FUZZ_ENV_VAR, CMPLOG_SHM_ENV_VAR, NULL};
+  //CGI FUZZ: add SHM_CGI_FD_ENV_VAR, SHM_CGI_RE_ENV_VAR
+  char *list[6] = {SHM_ENV_VAR, SHM_FUZZ_ENV_VAR, CMPLOG_SHM_ENV_VAR, SHM_CGI_FD_ENV_VAR, SHM_CGI_RE_ENV_VAR, NULL};
   char *ptr;
 
   ptr = getenv("__AFL_TARGET_PID2");
@@ -1817,6 +1818,8 @@ int main(int argc, char **argv_orig, char **envp) {
   afl_realloc(AFL_BUF_PARAM(out), min_alloc);
   afl_realloc(AFL_BUF_PARAM(eff), min_alloc);
   afl_realloc(AFL_BUF_PARAM(ex), min_alloc);
+  /* CGI fuzz */
+  afl_realloc(AFL_BUF_PARAM(new), min_alloc);
 
   afl->fsrv.use_fauxsrv = afl->non_instrumented_mode == 1 || afl->no_forkserver;
   afl->fsrv.max_length = afl->max_length;
@@ -2281,6 +2284,10 @@ int main(int argc, char **argv_orig, char **envp) {
   afl->argv = use_argv;
   afl->fsrv.trace_bits =
       afl_shm_init(&afl->shm, afl->fsrv.map_size, afl->non_instrumented_mode);
+
+  /* CGI FUZZ */
+  setup_cgi_feedback_shmem(afl);
+  setup_cgi_regex_shmem(afl);
 
   if (!afl->non_instrumented_mode && !afl->fsrv.qemu_mode &&
       !afl->unicorn_mode && !afl->fsrv.frida_mode && !afl->fsrv.cs_mode &&
@@ -2874,7 +2881,7 @@ int main(int argc, char **argv_orig, char **envp) {
 
       }
 
-      skipped_fuzz = fuzz_one(afl);
+      skipped_fuzz = hook_fuzz_one(afl);
   #ifdef INTROSPECTION
       ++afl->queue_cur->stats_selected;
 
@@ -3076,6 +3083,16 @@ stop_fuzzing:
   destroy_extras(afl);
   destroy_custom_mutators(afl);
   afl_shm_deinit(&afl->shm);
+  
+  /* CGI FUZZ: add shm deinit*/
+  if (afl->cgi_feedback) {
+    afl_shm_deinit(afl->cgi_feedback);
+    ck_free(afl->cgi_feedback);
+  }
+  if (afl->cgi_regex) {
+    afl_shm_deinit(afl->cgi_regex);
+    ck_free(afl->cgi_regex);
+  }
 
   if (afl->shm_fuzz) {
 

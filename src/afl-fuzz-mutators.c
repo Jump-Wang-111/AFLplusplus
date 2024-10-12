@@ -544,7 +544,7 @@ u8 trim_case_custom(afl_state_t *afl, struct queue_entry *q, u8 *in_buf,
 
         if (afl->stop_soon || fault == FSRV_RUN_ERROR) { goto abort_trimming; }
 
-        classify_counts(&afl->fsrv);
+        (&afl->fsrv);
         cksum = hash64(afl->fsrv.trace_bits, afl->fsrv.map_size, HASH_CONST);
 
       }

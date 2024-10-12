@@ -504,14 +504,12 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
     (void)write_to_testcase(afl, (void **)&use_mem, q->len, 1);
 
     fault = fuzz_run_target(afl, &afl->fsrv, use_tmout);
-
     // update the time spend in calibration after each execution, as those may
     // be slow
     update_calibration_time(afl, &calibration_start_us);
 
     /* afl->stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
-
     if (afl->stop_soon || fault != afl->crash_mode) { goto abort_calibration; }
 
     if (!afl->non_instrumented_mode && !afl->stage_cur &&
@@ -628,7 +626,6 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
   }
 
 abort_calibration:
-
   if (new_bits == 2 && !q->has_new_cov) {
 
     q->has_new_cov = 1;
@@ -1146,6 +1143,15 @@ u8 __attribute__((hot))
 common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
   u8 fault;
+
+  /* CGI FUZZ */
+  out_buf = recombine_input(afl, out_buf, len);
+  if (out_buf == 0) return 0;
+  else len = strlen(out_buf);
+
+  // fprintf(stderr, "[TEST] %s\n", out_buf);
+  // fprintf(stderr, "[TEST] %d\n", afl_alloc_bufsize(out_buf));
+  // fprintf(stderr, "[TEST] %d\n", len);
 
   if (unlikely(len = write_to_testcase(afl, (void **)&out_buf, len, 0)) == 0) {
 

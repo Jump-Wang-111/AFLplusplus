@@ -32,6 +32,7 @@
 #include <stdbool.h>
 
 #include "types.h"
+#include "aflcgi.h"
 
 #ifdef __linux__
 /**
@@ -205,6 +206,13 @@ typedef struct afl_forkserver {
   char                 *nyx_tmp_workdir_path;
   s32                   nyx_log_fd;
 #endif
+
+  /* CGI fuzz */
+  u32         *shmem_cgi_fb_num;                /* nums of feedback envs            */
+
+  u8          *shmem_cgi_fb_buf;                /* allocated memory for feedback of cgi fuzz */
+
+  regex_env   *shmem_cgi_regex;                 /* shmem for path_info by hooked regexec */
 
 } afl_forkserver_t;
 

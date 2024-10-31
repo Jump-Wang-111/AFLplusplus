@@ -575,6 +575,8 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   u8 *skip_eff_map = afl->queue_cur->skipdet_e->skip_eff_map;
 
+  // if (!skip_eff_map) goto custom_mutator_stage;
+
   /* Skip right away if -d is given, if it has not been chosen sufficiently
      often to warrant the expensive deterministic stage (fuzz_level), or
      if it has gone through deterministic testing in earlier, resumed runs
@@ -582,27 +584,27 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /* if skipdet decide to skip the seed or no interesting bytes found,
      we skip the whole deterministic stage as well */
 
-  // if (likely(afl->skip_deterministic) || likely(afl->queue_cur->passed_det) ||
-  //     likely(!afl->queue_cur->skipdet_e->quick_eff_bytes) ||
-  //     likely(perf_score <
-  //            (afl->queue_cur->depth * 30 <= afl->havoc_max_mult * 100
-  //                 ? afl->queue_cur->depth * 30
-  //                 : afl->havoc_max_mult * 100))) {
+  if (likely(afl->skip_deterministic) || likely(afl->queue_cur->passed_det) ||
+      likely(!afl->queue_cur->skipdet_e->quick_eff_bytes) ||
+      likely(perf_score <
+             (afl->queue_cur->depth * 30 <= afl->havoc_max_mult * 100
+                  ? afl->queue_cur->depth * 30
+                  : afl->havoc_max_mult * 100))) {
 
-  //   goto custom_mutator_stage;
+    goto custom_mutator_stage;
 
-  // }
+  }
 
   /* Skip deterministic fuzzing if exec path checksum puts this out of scope
      for this main instance. */
 
-  // if (unlikely(afl->main_node_max &&
-  //              (afl->queue_cur->exec_cksum % afl->main_node_max) !=
-  //                  afl->main_node_id - 1)) {
+  if (unlikely(afl->main_node_max &&
+               (afl->queue_cur->exec_cksum % afl->main_node_max) !=
+                   afl->main_node_id - 1)) {
 
-  //   goto custom_mutator_stage;
+    goto custom_mutator_stage;
 
-  // }
+  }
 
   doing_det = 1;
 
@@ -625,6 +627,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
     afl->queue_cur->range_pair_array[i] = old_value;
   }
+  afl->cgi_regex_done = 1;
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *

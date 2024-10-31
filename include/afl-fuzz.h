@@ -505,6 +505,7 @@ typedef struct afl_state {
   sharedmem_t     *cgi_feedback;
   sharedmem_t     *cgi_regex;
   u8              *new_buf;
+  u8              cgi_regex_done;
 
   afl_env_vars_t   afl_env;
 
@@ -1204,6 +1205,7 @@ void setup_cgi_regex_shmem(afl_state_t *);
 void save_to_queue(afl_state_t *, void *, u32);
 void save_interesting(afl_state_t *, struct queue_entry *);
 void save_data(afl_state_t *);
+// void* python_regex(void *);
 void generate_regex(afl_state_t *);
 u8   hook_fuzz_one(afl_state_t *);
 void save_crash(afl_state_t *, void *, u32);

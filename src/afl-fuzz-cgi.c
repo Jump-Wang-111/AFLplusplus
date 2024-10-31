@@ -220,6 +220,7 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 		strcpy(pair->key, cgi_range[i].key);
 		pair->value = malloc(strlen(afl->queue_cur->range_pair_array[i]));
 		strcpy(pair->value, afl->queue_cur->range_pair_array[i]);
+		pair->next = NULL;
 
 		add_pair_list(&afl->queue_cur->range_pair_list, pair);
 	}
@@ -397,8 +398,8 @@ void save_data(afl_state_t *afl) {
 
 	fp = fopen("path_info.txt", "w");
 	if (fp == NULL) {
-			perror("Error opening file");
-			return;
+		perror("Error opening file");
+		return;
 	}
 	for (int j = 0; j < *(cgi_range[PATH_INFO].num); j++) {
     fprintf(fp, "%s\n", cgi_range[PATH_INFO].value[j]);
@@ -407,40 +408,85 @@ void save_data(afl_state_t *afl) {
 
 	fp = fopen("lose_env.txt", "w");
 	if (fp == NULL) {
-			perror("Error opening file");
-			return;
+		perror("Error opening file");
+		return;
 	}
-	for (int j = 0; j < afl->fsrv.shmem_cgi_fb_num; j++) {
+	for (int j = 0; j < *(afl->fsrv.shmem_cgi_fb_num); j++) {
     fprintf(fp, "%s\n", afl->fsrv.shmem_cgi_fb_buf + j*ENV_NAME_MAX_LEN);
 	}
 	fclose(fp);
 }
 
+// typedef struct thread_args {
+// 	afl_state_t		*afl;
+// 	int						i;
+// } thread_args;
+
+// void* python_regex(void* arg) {
+	
+// 	thread_args *ta = (thread_args*)arg;
+// 	afl_state_t *afl = ta->afl;
+// 	int i = ta->i;
+	
+// 	FILE* fp;
+
+// 	char command[REGEX_STR_LEN];
+// 	sprintf(command, "python ./plugin/random_regex.py \"%s\" 2>> error_log.txt", afl->fsrv.shmem_cgi_regex->path_info_r[i]);
+	
+// 	fp = popen(command, "r");
+// 	if (fp == NULL) {
+// 		perror("popen");
+// 		exit(1);
+// 	}
+
+// 	fgets(afl->fsrv.shmem_cgi_regex->path_info_str[i], REGEX_STR_LEN, fp);
+
+// 	pclose(fp);
+// 	return NULL;
+// }
+
+// void generate_regex(afl_state_t *afl) {
+	
+// 	pthread_t tid[1 << 12];
+// 	for (int i = 0; i < *(cgi_range[PATH_INFO].num); i++) {
+// 		thread_args ta;
+// 		ta.afl = afl;
+// 		ta.i = i;
+// 		pthread_create(&tid[i], NULL, python_regex, (void*)&ta);
+// 	}
+
+// 	for (int i = 0; i < *(cgi_range[PATH_INFO].num); i++) {
+// 		pthread_join(tid[i], NULL);
+// 	}
+
+// }
+
 void generate_regex(afl_state_t *afl) {
-	pid_t pid;
-	FILE *fp;
+
+	if (!afl->cgi_regex_done) return;
+
+	FILE *fp[1 << 12];
+	for (int i = 0; i < *(cgi_range[PATH_INFO].num); i++) {
+      
+		char command[REGEX_STR_LEN];
+		sprintf(command, "python ./plugin/random_regex.py \"%s\" 2>> error_log.txt", afl->fsrv.shmem_cgi_regex->path_info_r[i]);
+		
+		fp[i] = popen(command, "r");
+		if (fp[i] == NULL) {
+			perror("popen");
+			exit(1);
+		}
+    
+	}
 
 	for (int i = 0; i < *(cgi_range[PATH_INFO].num); i++) {
-		
-		pid = fork();
-		if (pid == 0) {
-      
-			char command[REGEX_STR_LEN];
-      sprintf(command, "python random_regex.py \"%s\" 2>> error_log.txt", afl->fsrv.shmem_cgi_regex->path_info_r[i]);
-      
-			fp = popen(command, "r");
-      if (fp == NULL) {
-        perror("popen");
-        exit(1);
-      }
 
-      fgets(afl->fsrv.shmem_cgi_regex->path_info_str[i], REGEX_STR_LEN, fp);
-
-      pclose(fp);
-      exit(0);
-    }
+		fgets(afl->fsrv.shmem_cgi_regex->path_info_str[i], REGEX_STR_LEN, fp[i]);
+		pclose(fp[i]);
 
 	}
+	afl->cgi_regex_done = 0;
+
 }
 
 u8 hook_fuzz_one(afl_state_t *afl) {
@@ -454,11 +500,13 @@ u8 hook_fuzz_one(afl_state_t *afl) {
 		trigger OOM and kill the process due to too 
 		many forks.
 	*/ 
-	// generate_regex(afl);
+	generate_regex(afl);
+
+	save_data(afl);
 	
 	save_interesting(afl, afl->queue_cur);
 
-	save_data(afl);
+	// save_data(afl);
 
 	return skip;
 }

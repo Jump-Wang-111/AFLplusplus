@@ -1,7 +1,0 @@
-# environment variables:
-AFL_CUSTOM_INFO_PROGRAM=./usr/local/bin/spx_restservice
-AFL_CUSTOM_INFO_PROGRAM_ARGV=@@
-AFL_CUSTOM_INFO_OUT=../output/default
-AFL_DEBUG=1
-# command line:
-'/home/wjp/AFLplusplus/afl-fuzz' '-Q' '-i' '../input' '-o' '../output' '--' './usr/local/bin/spx_restservice' '@@'

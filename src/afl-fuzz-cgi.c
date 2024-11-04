@@ -199,18 +199,18 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
     l = l->next;
   }
 	
-  if (n >= MAX_TEMP_STR || l != NULL) return 0;
-  
+	if (n >= MAX_TEMP_STR || l != NULL) return 0;
+
 	/* Constructing random_pair_list */
-  l = afl->queue_cur->random_pair_list;
-  for (int i = 0; i < n && l != NULL; i++) {
-    l->value = tmp_str[i];
-    l = l->next;
-  }
+	l = afl->queue_cur->random_pair_list;
+	for (int i = 0; i < n && l != NULL; i++) {
+		l->value = tmp_str[i];
+		l = l->next;
+	}
 
 	/* Constructing range_pair_list */
-	// free_pair_list(afl->queue_cur->range_pair_list);
-	// afl->queue_cur->range_pair_list = NULL;
+	free_pair_list(afl->queue_cur->range_pair_list);
+	afl->queue_cur->range_pair_list = NULL;
 
 	for (int i = 0; i < RANGE_COUNT; i++) {
 		if (!afl->queue_cur->range_pair_array[i]) continue;
@@ -226,28 +226,28 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 	}
 
   /* Recombine input from lists */
-  len = 0;
-  len += size_pair2str(afl->queue_cur->fix_pair_list);
-  len += size_pair2str(afl->queue_cur->range_pair_list);
-  len += size_pair2str(afl->queue_cur->random_pair_list);
+	len = 0;
+	len += size_pair2str(afl->queue_cur->fix_pair_list);
+	len += size_pair2str(afl->queue_cur->range_pair_list);
+	len += size_pair2str(afl->queue_cur->random_pair_list);
 
 	u8 *new_buf = afl_realloc(AFL_BUF_PARAM(new), len);
-  
+
 	u8 *tmp_buf = new_buf;
-  tmp_buf = pair2str(tmp_buf, afl->queue_cur->fix_pair_list);
-  tmp_buf = pair2str(tmp_buf, afl->queue_cur->range_pair_list);
-  tmp_buf = pair2str(tmp_buf, afl->queue_cur->random_pair_list);
+	tmp_buf = pair2str(tmp_buf, afl->queue_cur->fix_pair_list);
+	tmp_buf = pair2str(tmp_buf, afl->queue_cur->range_pair_list);
+	tmp_buf = pair2str(tmp_buf, afl->queue_cur->random_pair_list);
 
-	free_pair_list(afl->queue_cur->range_pair_list);
-	afl->queue_cur->range_pair_list = NULL;
+	// free_pair_list(afl->queue_cur->range_pair_list);
+	// afl->queue_cur->range_pair_list = NULL;
 
-  l = afl->queue_cur->random_pair_list;
-  while (l != NULL) {
-    l->value = NULL;
-    l = l->next;
-  }
+	l = afl->queue_cur->random_pair_list;
+	while (l != NULL) {
+		l->value = NULL;
+		l = l->next;
+	}
 	// DEBUGF("new_buf:%s\n", new_buf);
-  return new_buf;
+	return new_buf;
 }
 
 void setup_cgi_feedback_shmem(afl_state_t *afl) {
@@ -345,8 +345,8 @@ void save_to_queue(afl_state_t *afl, void *mem, u32 len) {
 void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 
 	/* Check new env */
-  u32   cgi_feedback_num    = *(afl->fsrv.shmem_cgi_fb_num);
-  char *cgi_feedback_buf    =   afl->fsrv.shmem_cgi_fb_buf;
+	u32   cgi_feedback_num    = *(afl->fsrv.shmem_cgi_fb_num);
+	char *cgi_feedback_buf    =   afl->fsrv.shmem_cgi_fb_buf;
 
 	struct stat st;
 	u8 *fn = q->fname, *mem;
@@ -360,12 +360,12 @@ void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 	mem = ck_alloc(len);
 	
 	fd = open(fn, O_RDONLY);
-  if (fd < 0) PFATAL("Unable to open '%s'", fn);
+	if (fd < 0) PFATAL("Unable to open '%s'", fn);
 
 	ck_read(fd, mem, len, fn);
-  close(fd);
+	close(fd);
 
-	DEBUGF("Queue id: %d.\n", q->id);
+	// DEBUGF("Queue id: %d.\n", q->id);
 	for (int i = 0; i < cgi_feedback_num; i++) {
 
 		char *env_name = cgi_feedback_buf + i*ENV_NAME_MAX_LEN;
@@ -402,7 +402,7 @@ void save_data(afl_state_t *afl) {
 		return;
 	}
 	for (int j = 0; j < *(cgi_range[PATH_INFO].num); j++) {
-    fprintf(fp, "%s\n", cgi_range[PATH_INFO].value[j]);
+		fprintf(fp, "%s\n", cgi_range[PATH_INFO].value[j]);
 	}
 	fclose(fp);
 
@@ -412,7 +412,7 @@ void save_data(afl_state_t *afl) {
 		return;
 	}
 	for (int j = 0; j < *(afl->fsrv.shmem_cgi_fb_num); j++) {
-    fprintf(fp, "%s\n", afl->fsrv.shmem_cgi_fb_buf + j*ENV_NAME_MAX_LEN);
+		fprintf(fp, "%s\n", afl->fsrv.shmem_cgi_fb_buf + j*ENV_NAME_MAX_LEN);
 	}
 	fclose(fp);
 }

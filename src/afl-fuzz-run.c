@@ -1145,7 +1145,11 @@ common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
   u8 fault;
 
   /* CGI FUZZ */
+  struct timespec start, end;
+  long elapsed_time_ms;
+
   out_buf = recombine_input(afl, out_buf, len);
+  
   if (out_buf == 0) return 0;
   else len = strlen(out_buf);
 

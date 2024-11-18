@@ -2027,7 +2027,9 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     }
 
 #endif
-
+    if (getenv("AFL_DEBUG")) {
+      DEBUGF("FSRV_RUN_TMOUT\n");
+    }
     return FSRV_RUN_TMOUT;
 
   }

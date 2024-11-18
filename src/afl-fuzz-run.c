@@ -892,6 +892,22 @@ u8 trim_case(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
   u8  needs_write = 0, fault = 0;
   u32 orig_len = q->len;
   u64 trim_start_us = get_cur_time_us();
+
+  /* cgi fuzz
+    ** trim input, just keep key-values which need to mutate*/
+  if (afl->cgi_fuzz == 1) {
+
+    trim_cgi_input(q, in_buf);
+
+    // if (orig_len != q->len) {
+    //   queue_testcase_retake(afl, q, orig_len);
+    // }
+    fault = 0;
+    goto abort_trimming;
+
+  }
+  
+
   /* Custom mutator trimmer */
   if (afl->custom_mutators_count) {
 
@@ -1143,19 +1159,6 @@ u8 __attribute__((hot))
 common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
   u8 fault;
-
-  /* CGI FUZZ */
-  struct timespec start, end;
-  long elapsed_time_ms;
-
-  out_buf = recombine_input(afl, out_buf, len);
-  
-  if (out_buf == 0) return 0;
-  else len = strlen(out_buf);
-
-  // fprintf(stderr, "[TEST] %s\n", out_buf);
-  // fprintf(stderr, "[TEST] %d\n", afl_alloc_bufsize(out_buf));
-  // fprintf(stderr, "[TEST] %d\n", len);
 
   if (unlikely(len = write_to_testcase(afl, (void **)&out_buf, len, 0)) == 0) {
 

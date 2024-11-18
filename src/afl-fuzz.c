@@ -2288,6 +2288,7 @@ int main(int argc, char **argv_orig, char **envp) {
   /* CGI FUZZ */
   setup_cgi_feedback_shmem(afl);
   setup_cgi_regex_shmem(afl);
+  afl->cgi_gen_regex = 1;
 
   if (!afl->non_instrumented_mode && !afl->fsrv.qemu_mode &&
       !afl->unicorn_mode && !afl->fsrv.frida_mode && !afl->fsrv.cs_mode &&
@@ -2561,7 +2562,7 @@ int main(int argc, char **argv_orig, char **envp) {
   save_auto(afl);
 
   if (afl->stop_soon) { goto stop_fuzzing; }
-
+  
   /* Woop woop woop */
 
   if (!afl->not_on_tty) {

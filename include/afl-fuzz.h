@@ -505,7 +505,7 @@ typedef struct afl_state {
   sharedmem_t     *cgi_feedback;
   sharedmem_t     *cgi_regex;
   u8              *new_buf;
-  u8              cgi_regex_done;
+  u8              cgi_gen_regex;
 
   afl_env_vars_t   afl_env;
 
@@ -1210,6 +1210,7 @@ void generate_regex(afl_state_t *);
 u8   hook_fuzz_one(afl_state_t *);
 void save_crash(afl_state_t *, void *, u32);
 void init_range(afl_state_t *);
+u8   hook_common_fuzz_stuff(afl_state_t *, u8 *, u32);
 
 /* Bitmap */
 

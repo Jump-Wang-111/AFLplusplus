@@ -2,6 +2,9 @@
 
 #include "afl-fuzz.h"
 
+/* CGI FUZZ */
+#define common_fuzz_stuff(afl, out_buf, len) hook_common_fuzz_stuff(afl, out_buf, len)
+
 void flip_range(u8 *input, u32 pos, u32 size) {
 
   for (u32 i = 0; i < size; i++)

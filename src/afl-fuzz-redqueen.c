@@ -28,6 +28,9 @@
 #include "afl-fuzz.h"
 #include "cmplog.h"
 
+/* CGI FUZZ */
+#define common_fuzz_stuff(afl, out_buf, len) hook_common_fuzz_stuff(afl, out_buf, len)
+
 // #define _DEBUG
 // #define USE_HASHMAP
 // #define CMPLOG_INTROSPECTION

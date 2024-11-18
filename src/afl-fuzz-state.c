@@ -736,6 +736,9 @@ void afl_state_deinit(afl_state_t *afl) {
   afl_free(afl->in_scratch_buf);
   afl_free(afl->ex_buf);
 
+  /* CGI FUZZ */
+  afl_free(afl->new_buf);
+
   ck_free(afl->virgin_bits);
   ck_free(afl->virgin_tmout);
   ck_free(afl->virgin_crash);

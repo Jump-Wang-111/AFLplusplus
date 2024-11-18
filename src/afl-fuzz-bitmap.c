@@ -203,6 +203,10 @@ void init_count_class16(void) {
    it needs to be fast. We do this in 32-bit and 64-bit flavors. */
 
 inline u8 has_new_bits(afl_state_t *afl, u8 *virgin_map) {
+  
+  // if (afl->virgin_crash == virgin_map) {
+  //   DEBUGF("debug crash map:\n");
+  // }
 
 #ifdef WORD_SIZE_64
 
@@ -224,6 +228,10 @@ inline u8 has_new_bits(afl_state_t *afl, u8 *virgin_map) {
   while (i--) {
 
     if (unlikely(*current)) discover_word(&ret, current, virgin);
+
+    // if (afl->virgin_crash == virgin_map) {
+    //   DEBUGF("current: 0x%llx, virgin: 0x%llx\n", *current, *virgin);
+    // }
 
     current++;
     virgin++;
@@ -635,7 +643,11 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
     /* Try to calibrate inline; this also calls update_bitmap_score() when
        successful. */
     res = calibrate_case(afl, afl->queue_top, mem, afl->queue_cycle - 1, 0);
-
+    if (getenv("AFL_DEBUG")) {
+      DEBUGF("calibrate_case queue id: %d\n", afl->queue_top->id);
+      DEBUGF("calibrate_case res: %d\n", res);
+    }
+    
     if (unlikely(res == FSRV_RUN_ERROR)) {
 
       FATAL("Unable to execute target application");
@@ -828,7 +840,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
       }
 
 #ifndef SIMPLE_FILES
-
+      DEBUGF("write crash\n");
       if (!afl->afl_env.afl_sha1_filenames) {
 
         snprintf(fn, PATH_MAX, "%s/crashes/id:%06llu,sig:%02u,%s%s%s",

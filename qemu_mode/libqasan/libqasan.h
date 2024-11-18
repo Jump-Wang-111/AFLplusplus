@@ -129,4 +129,3 @@ wchar_t *__libqasan_wcscpy(wchar_t *d, const wchar_t *s);
 int      __libqasan_wcscmp(const wchar_t *s1, const wchar_t *s2);
 
 #endif
-

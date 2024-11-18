@@ -29,6 +29,9 @@
 #include "cmplog.h"
 #include "afl-mutations.h"
 
+/* CGI FUZZ */
+#define common_fuzz_stuff(afl, out_buf, len) hook_common_fuzz_stuff(afl, out_buf, len)
+
 /* MOpt */
 
 static int select_algorithm(afl_state_t *afl, u32 max_algorithm) {
@@ -325,7 +328,7 @@ static void locate_diffs(u8 *ptr1, u8 *ptr2, u32 len, s32 *first, s32 *last) {
    skipped or bailed out. */
 
 u8 fuzz_one_original(afl_state_t *afl) {
-
+  
   u32 len, temp_len;
   u32 j;
   u32 i;
@@ -470,17 +473,15 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /************
    * TRIMMING *
    ************/
+  // DEBUGF("TRIMMING\n");
 
   if (unlikely(!afl->non_instrumented_mode && !afl->queue_cur->trim_done &&
                !afl->disable_trim)) {
     
-    /* cgi fuzz
-    ** trim input, just keep key-values which need to mutate*/
-    trim_cgi_input(afl->queue_cur, in_buf);
-
     u32 old_len = afl->queue_cur->len;
 
     u8 res = trim_case(afl, afl->queue_cur, in_buf);
+
     orig_in = in_buf = queue_testcase_get(afl, afl->queue_cur);
 
     if (unlikely(res == FSRV_RUN_ERROR)) {
@@ -575,8 +576,6 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   u8 *skip_eff_map = afl->queue_cur->skipdet_e->skip_eff_map;
 
-  // if (!skip_eff_map) goto custom_mutator_stage;
-
   /* Skip right away if -d is given, if it has not been chosen sufficiently
      often to warrant the expensive deterministic stage (fuzz_level), or
      if it has gone through deterministic testing in earlier, resumed runs
@@ -607,27 +606,6 @@ u8 fuzz_one_original(afl_state_t *afl) {
   }
 
   doing_det = 1;
-
-  /*********************************************
-   * CGI RANGE *
-   *********************************************/
-  DEBUGF("CGI RANGE\n");
-  /*range_pair_array: queue, saves the range variables of this round
-    cgi_range: global, saves all range variables*/
-  for (int i = 0; i < RANGE_COUNT; i++) {
-    
-    if (!afl->queue_cur->range_pair_array[i]) continue;
-
-    char *old_value = afl->queue_cur->range_pair_array[i];
-    for (int j = 0; j < *(cgi_range[i].num); j++) {
-      // DEBUGF("cgi_range: %s\n", cgi_range[i].value[j]);
-      afl->queue_cur->range_pair_array[i] = cgi_range[i].value[j];
-      if (common_fuzz_stuff(afl, out_buf, len)) { goto abandon_entry; }
-    }
-
-    afl->queue_cur->range_pair_array[i] = old_value;
-  }
-  afl->cgi_regex_done = 1;
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -1857,6 +1835,28 @@ skip_extras:
   if (!afl->queue_cur->passed_det) { mark_as_det_done(afl, afl->queue_cur); }
 
 custom_mutator_stage:
+
+  /*********************************************
+   * CGI RANGE *
+   *********************************************/
+  // DEBUGF("CGI RANGE\n");
+  /*range_pair_array: queue, saves the range variables of this round
+    cgi_range: global, saves all range variables*/
+  for (int i = 0; i < RANGE_COUNT; i++) {
+    
+    if (!afl->queue_cur->range_pair_array[i]) continue;
+
+    char *old_value = afl->queue_cur->range_pair_array[i];
+    for (int j = 0; j < *(cgi_range[i].num); j++) {
+      // DEBUGF("cgi_range: %s\n", cgi_range[i].value[j]);
+      afl->queue_cur->range_pair_array[i] = cgi_range[i].value[j];
+      if (common_fuzz_stuff(afl, out_buf, len)) { goto abandon_entry; }
+    }
+
+    afl->queue_cur->range_pair_array[i] = old_value;
+  }
+  // afl->cgi_regex_done = 1;
+
   /*******************
    * CUSTOM MUTATORS *
    *******************/

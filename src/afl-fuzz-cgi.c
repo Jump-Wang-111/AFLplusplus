@@ -42,9 +42,18 @@ void free_pair_list(cgi_pair *list) {
 	{
 		cgi_pair *tmp = list;
 		list = list->next;
-		if (tmp->key) free(tmp->key); 
-		if (tmp->value) free(tmp->value);
+		if (tmp->key) { 
+			if(getenv("AFL_DEBUG")) DEBUGF("free key: %s\n", tmp->key);
+			free(tmp->key); 
+			tmp->key = NULL; 
+		}
+		if (tmp->value) { 
+			if(getenv("AFL_DEBUG")) DEBUGF("free value: %s\n", tmp->value);
+			free(tmp->value); 
+			tmp->value = NULL; 
+		}
 		free(tmp);
+		tmp = NULL;
 	}
 
 }
@@ -62,9 +71,9 @@ u8 in_pair_list(cgi_pair *list, char *name) {
 u8 in_all_pair_list(struct queue_entry *q, char *name) {
 
 	if (in_pair_list(q->fix_pair_list, name) ||
-			in_pair_list(q->range_pair_list, name) ||
-			in_pair_list(q->random_pair_list, name))
-			return 1;
+		in_pair_list(q->range_pair_list, name) ||
+		in_pair_list(q->random_pair_list, name))
+		return 1;
 	
 	return 0;
 }
@@ -111,11 +120,11 @@ void trim_cgi_input(struct queue_entry *q, u8 *in_buf) {
 
 		cgi_pair *pair = malloc(sizeof(cgi_pair));
 		
-		pair->key = malloc(tmp - st);
+		pair->key = malloc(tmp - st + 1);
 		*tmp++ = '\0';
 		strcpy(pair->key, st);
 		
-		pair->value = malloc(ed - tmp);
+		pair->value = malloc(ed - tmp + 1);
 		*ed++ = '\0';
 		strcpy(pair->value, tmp);
 		// if (getenv("CGI_DEBUG"))
@@ -127,7 +136,7 @@ void trim_cgi_input(struct queue_entry *q, u8 *in_buf) {
 			if (!strcmp(cgi_fix[i][KEY], pair->key)) {
 				
 				free(pair->value);
-				pair->value = malloc(strlen(cgi_fix[i][VALUE]));
+				pair->value = malloc(strlen(cgi_fix[i][VALUE]) + 1);
 				strcpy(pair->value, cgi_fix[i][VALUE]);
 
 				add_pair_list(&q->fix_pair_list, pair);
@@ -171,33 +180,34 @@ NEXT_PAIR:
 	q->len = p - in_buf;
 }
 
-u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
+u8* __attribute__((hot))
+recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 
-  u8 *st = out_buf, *ed = out_buf + len, *tmp = st;
+	u8 *st = out_buf, *ed = out_buf + len, *tmp = st;
 
 	// DEBUGF("orign out buf:%s\n", *out_buf);
-  /*  Check the result of mutate.
-      If out_buf cannot be devided into random_pair_list,
-      (afl break the struct of cgi input)
-      we will return
-  */
-  cgi_pair *l = afl->queue_cur->random_pair_list;
-  char tmp_str[MAX_TEMP_STR][ENV_MAX_LEN];
-  int n = 0;
+	/*  Check the result of mutate.
+		If out_buf cannot be devided into random_pair_list,
+		(afl break the struct of cgi input)
+		we will return
+	*/
+	cgi_pair *l = afl->queue_cur->random_pair_list;
+	char tmp_str[MAX_TEMP_STR][ENV_MAX_LEN];
+	int n = 0;
   
 	while (l != NULL) {
-    if (tmp >= ed) break;
+		if (tmp >= ed) break;
 
-    int size = strlen(tmp);
-    if (size == 0) { tmp++; continue; }
+		int size = strlen(tmp);
+		if (size == 0) { tmp++; continue; }
 
-    strncpy(tmp_str[n], tmp, ENV_MAX_LEN);
+		strncpy(tmp_str[n], tmp, ENV_MAX_LEN);
 
-    if (++n > MAX_TEMP_STR) break;
-    
-    tmp += size + 1;
-    l = l->next;
-  }
+		if (++n > MAX_TEMP_STR) break;
+
+		tmp += size + 1;
+		l = l->next;
+	}
 	
 	if (n >= MAX_TEMP_STR || l != NULL) return 0;
 
@@ -216,16 +226,16 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 		if (!afl->queue_cur->range_pair_array[i]) continue;
 
 		cgi_pair *pair = malloc(sizeof(cgi_pair));
-		pair->key = malloc(strlen(cgi_range[i].key));
+		pair->key = malloc(strlen(cgi_range[i].key) + 1);
 		strcpy(pair->key, cgi_range[i].key);
-		pair->value = malloc(strlen(afl->queue_cur->range_pair_array[i]));
+		pair->value = malloc(strlen(afl->queue_cur->range_pair_array[i]) + 1);
 		strcpy(pair->value, afl->queue_cur->range_pair_array[i]);
 		pair->next = NULL;
 
 		add_pair_list(&afl->queue_cur->range_pair_list, pair);
 	}
 
-  /* Recombine input from lists */
+	/* Recombine input from lists */
 	len = 0;
 	len += size_pair2str(afl->queue_cur->fix_pair_list);
 	len += size_pair2str(afl->queue_cur->range_pair_list);
@@ -238,9 +248,11 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 	tmp_buf = pair2str(tmp_buf, afl->queue_cur->range_pair_list);
 	tmp_buf = pair2str(tmp_buf, afl->queue_cur->random_pair_list);
 
-	// free_pair_list(afl->queue_cur->range_pair_list);
-	// afl->queue_cur->range_pair_list = NULL;
+	/* Clear range_pair_list */
+	free_pair_list(afl->queue_cur->range_pair_list);
+	afl->queue_cur->range_pair_list = NULL;
 
+	/* Clear random_pair_list */
 	l = afl->queue_cur->random_pair_list;
 	while (l != NULL) {
 		l->value = NULL;
@@ -252,20 +264,20 @@ u8* recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
 
 void setup_cgi_feedback_shmem(afl_state_t *afl) {
 
-  afl->cgi_feedback = ck_alloc(sizeof(sharedmem_t));
+	afl->cgi_feedback = ck_alloc(sizeof(sharedmem_t));
 
-  // we need to set the non-instrumented mode to not overwrite the SHM_ENV_VAR
-  u8 *map = afl_shm_init(afl->cgi_feedback, MAX_FILE + sizeof(u32), 1);
+	// we need to set the non-instrumented mode to not overwrite the SHM_ENV_VAR
+	u8 *map = afl_shm_init(afl->cgi_feedback, MAX_FILE + sizeof(u32), 1);
 	memset(map, 0, MAX_FILE + sizeof(u32));
 
-  if (!map) { FATAL("BUG: Zero return from cgi_shm_init."); }
+	if (!map) { FATAL("BUG: Zero return from cgi_shm_init."); }
 
-  u8 *shm_str = alloc_printf("%d", afl->cgi_feedback->shm_id);
-  setenv(SHM_CGI_FD_ENV_VAR, shm_str, 1);
-  ck_free(shm_str);
+	u8 *shm_str = alloc_printf("%d", afl->cgi_feedback->shm_id);
+	setenv(SHM_CGI_FD_ENV_VAR, shm_str, 1);
+	ck_free(shm_str);
 
-  afl->fsrv.shmem_cgi_fb_num = (u32 *)map;
-  afl->fsrv.shmem_cgi_fb_buf = map + sizeof(u32);
+	afl->fsrv.shmem_cgi_fb_num = (u32 *)map;
+	afl->fsrv.shmem_cgi_fb_buf = map + sizeof(u32);
 }
 
 void init_range(afl_state_t *afl) {
@@ -281,19 +293,19 @@ void setup_cgi_regex_shmem(afl_state_t *afl) {
   
 	afl->cgi_regex = ck_alloc(sizeof(sharedmem_t));
 
-  // we need to set the non-instrumented mode to not overwrite the SHM_ENV_VAR
-  u8 *map = afl_shm_init(afl->cgi_regex, sizeof(regex_env), 1);
+	// we need to set the non-instrumented mode to not overwrite the SHM_ENV_VAR
+	u8 *map = afl_shm_init(afl->cgi_regex, sizeof(regex_env), 1);
 	memset(map, 0, sizeof(regex_env));
 
-  if (!map) { FATAL("BUG: Zero return from cgi_shm_init."); }
+	if (!map) { FATAL("BUG: Zero return from cgi_shm_init."); }
 
-  u8 *shm_str = alloc_printf("%d", afl->cgi_regex->shm_id);
-  setenv(SHM_CGI_RE_ENV_VAR, shm_str, 1);
-  ck_free(shm_str);
+	u8 *shm_str = alloc_printf("%d", afl->cgi_regex->shm_id);
+	setenv(SHM_CGI_RE_ENV_VAR, shm_str, 1);
+	ck_free(shm_str);
 
-  afl->fsrv.shmem_cgi_regex = (regex_env *)map;
+	afl->fsrv.shmem_cgi_regex = (regex_env *)map;
 	strcpy((afl->fsrv.shmem_cgi_regex)->env_name, "PATH_INFO");
-	
+
 	init_range(afl);
 }
 
@@ -385,7 +397,7 @@ void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 		// save_to_queue(afl, mem, strlen(mem));
 		save_if_interesting(afl, mem, strlen(mem), 0xff);
 		afl->queued_imported += 1;
-		DEBUGF("Successful add new queue.\n");
+		// DEBUGF("Successful add new queue.\n");
 
 		needed_size = len;
 	}
@@ -463,7 +475,7 @@ void save_data(afl_state_t *afl) {
 
 void generate_regex(afl_state_t *afl) {
 
-	if (!afl->cgi_regex_done) return;
+	if (afl->cgi_gen_regex) return;
 
 	FILE *fp[1 << 12];
 	for (int i = 0; i < *(cgi_range[PATH_INFO].num); i++) {
@@ -485,36 +497,31 @@ void generate_regex(afl_state_t *afl) {
 		pclose(fp[i]);
 
 	}
-	afl->cgi_regex_done = 0;
+	if (cgi_range[PATH_INFO].num) afl->cgi_gen_regex = 0;
 
 }
 
 u8 hook_fuzz_one(afl_state_t *afl) {
 
-	memset(afl->fsrv.shmem_cgi_fb_num, 0, MAX_FILE + sizeof(u32));
-
 	u8 skip = fuzz_one(afl);
 
-	/* TODO: change generate_regex.
-		Generating regex in the current way seems to 
-		trigger OOM and kill the process due to too 
-		many forks.
+	/*	TODO: change generate_regex.
+		Generating regex now only run once.
 	*/ 
 	generate_regex(afl);
 
 	save_data(afl);
 	
-	save_interesting(afl, afl->queue_cur);
+	// save_interesting(afl, afl->queue_cur);
 
-	// save_data(afl);
 
 	return skip;
 }
 
 /* 	When we change the logic of afl, crashes will 
-		not only occur in common_fuzz_stuff, we need 
-		to handle these additional crashes ourselves.
-		We copy keep_as_crash in save_if_interesting() here.  */
+	not only occur in common_fuzz_stuff, we need 
+	to handle these additional crashes ourselves.
+	We copy keep_as_crash in save_if_interesting() here.  */
 
 void save_crash(afl_state_t *afl, void *mem, u32 len) {
 
@@ -631,3 +638,46 @@ void save_crash(afl_state_t *afl, void *mem, u32 len) {
 }
 
 
+u8 __attribute__((hot)) 
+hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
+	
+	memset(afl->fsrv.shmem_cgi_fb_num, 0, MAX_FILE + sizeof(u32));
+
+	out_buf = recombine_input(afl, out_buf, len);
+	if (out_buf == 0) return 0;
+
+	len = strlen(out_buf);
+
+	u8 ret = common_fuzz_stuff(afl, out_buf, len);
+	if (ret) return ret;
+
+	u32   cgi_feedback_num    = *(afl->fsrv.shmem_cgi_fb_num);
+	char *cgi_feedback_buf    =   afl->fsrv.shmem_cgi_fb_buf;
+
+	u32 needed_size = len; // or afl_alloc_bufsize(out_buf) ?
+
+	for (int i = 0; i < cgi_feedback_num; i++) {
+
+		char *env_name = cgi_feedback_buf + i*ENV_NAME_MAX_LEN;
+		if (in_all_pair_list(afl->queue_cur, env_name)) continue;
+
+		needed_size += strlen(env_name);
+		needed_size += strlen("aaaaaa");
+		needed_size += 2;
+
+		out_buf = afl_realloc(AFL_BUF_PARAM(new), needed_size);
+
+		sprintf(out_buf + len, "%s=%s\n", env_name, "aaaaaa");
+		// DEBUGF("Try new env: %s\n", env_name);
+		// DEBUGF("Now env list: %s\n", out_buf);
+
+		ret = common_fuzz_stuff(afl, out_buf, needed_size);
+		if (ret) return ret;
+
+		needed_size = len;
+
+	}
+
+	return 0;
+
+}

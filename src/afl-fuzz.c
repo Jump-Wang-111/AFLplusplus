@@ -2288,7 +2288,8 @@ int main(int argc, char **argv_orig, char **envp) {
   /* CGI FUZZ */
   setup_cgi_feedback_shmem(afl);
   setup_cgi_regex_shmem(afl);
-  afl->cgi_gen_regex = 1;
+  map_init(&afl->cgi_regex_dedupe_map);
+  afl->last_gen_time = 0;
 
   if (!afl->non_instrumented_mode && !afl->fsrv.qemu_mode &&
       !afl->unicorn_mode && !afl->fsrv.frida_mode && !afl->fsrv.cs_mode &&
@@ -3094,6 +3095,7 @@ stop_fuzzing:
     afl_shm_deinit(afl->cgi_regex);
     ck_free(afl->cgi_regex);
   }
+  map_deinit(&afl->cgi_regex_dedupe_map);
 
   if (afl->shm_fuzz) {
 

@@ -2,6 +2,7 @@
 #define __AFLCGI_H
 
 #include <regex.h>
+#include "map.h"
 // #include <pthread.h>
 /* Keeping buffer */
 // typedef struct buffer {

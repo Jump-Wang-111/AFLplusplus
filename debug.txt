@@ -1,0 +1,32 @@
+[1;92m[+] [0mEnabled environment variable AFL_DEBUG with value 1[0m
+[1;92m[+] [0mEnabled environment variable AFL_DEBUG with value 1[0m
+[0;36mafl-fuzz++4.22a[0m based on afl by Michal Zalewski and a large online community
+[1;92m[+] [0mAFL++ is maintained by Marc "van Hauser" Heuse, Dominik Maier, Andrea Fioraldi and Heiko "hexcoder" Eißfeldt[0m
+[1;92m[+] [0mAFL++ is open source, get it at https://github.com/AFLplusplus/AFLplusplus[0m
+[1;92m[+] [0mNOTE: AFL++ >= v3 has changed defaults and behaviours - see README.md[0m
+[1;92m[+] [0mNo -M/-S set, autoconfiguring for "-S default"[0m
+[1;94m[*] [0mGetting to work...[0m
+[1;92m[+] [0mUsing exploration-based constant power schedule (EXPLORE)[0m
+[1;92m[+] [0mEnabled testcache with 50 MB[0m
+[1;92m[+] [0mGenerating fuzz data with a length of min=1 max=1048576[0m
+[1;94m[*] [0mChecking core_pattern...[0m
+[1;93m[!] [1;97mWARNING: [0mCould not check CPU scaling governor[0m
+[1;92m[+] [0mLooks like we're not running on a tty, so I'll be a bit less verbose.[0m
+[1;92m[+] [0mYou have 16 CPU cores and 1 runnable tasks (utilization: 6%).[0m
+[1;92m[+] [0mTry parallel jobs - see /usr/local/share/doc/afl/fuzzing_in_depth.md#c-using-multiple-cores[0m
+[1;94m[*] [0mSetting up output directories...[0m
+[1;92m[+] [0mOutput directory exists but deemed OK to reuse.[0m
+[1;94m[*] [0mDeleting old session data...[0m
+[1;92m[+] [0mOutput dir cleanup successful.[0m
+[1;94m[*] [0mChecking CPU core loadout...[0m
+[1;92m[+] [0mFound a free CPU core, try binding to #0.[0m
+[1;94m[*] [0mScanning './input_cmin'...[0m
+
+[1;91m[-] [0mThe input directory does not seem to be valid - try again. The fuzzer needs
+    one or more test case to start with - ideally, a small file under 1 kB
+    or so. The cases must be stored as regular files directly in the input
+    directory.
+[?25h[0m[1;91m
+[-]  SYSTEM ERROR : [0mUnable to open './input_cmin'[1;91m
+    Stop location : [0mread_testcases(), src/afl-fuzz-init.c:739
+[1;91m       OS message : [0mNo such file or directory

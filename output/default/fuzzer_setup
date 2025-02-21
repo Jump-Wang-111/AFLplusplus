@@ -1,0 +1,11 @@
+# environment variables:
+AFL_CUSTOM_INFO_PROGRAM=../inspur/SA5212M5_BMC_4.29.9_Standard_20231227/_SA5212M5_BMC_4.29.9_Standard_20231227.extracted/cramfs-root/usr/local/bin/spx_restservice
+AFL_CUSTOM_INFO_PROGRAM_ARGV=
+AFL_CUSTOM_INFO_OUT=./output/default
+AFL_DEBUG=1
+AFL_QEMU_PERSISTENT_ADDR=0x3ffa226c
+AFL_QEMU_PERSISTENT_GPR=1
+AFL_QEMU_PERSISTENT_MEM=1
+AFL_QEMU_INST_RANGES=spx_restservice,0x3f862000-0x3f882000,0x3fce6000-0x3ffd8000
+# command line:
+'afl-fuzz' '-k' '-t' '1000' '-i' './input_cmin' '-o' './output' '-Q' '../inspur/SA5212M5_BMC_4.29.9_Standard_20231227/_SA5212M5_BMC_4.29.9_Standard_20231227.extracted/cramfs-root/usr/local/bin/spx_restservice'

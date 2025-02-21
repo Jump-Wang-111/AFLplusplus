@@ -2,6 +2,7 @@
 #define __AFLCGI_H
 
 #include <regex.h>
+#include <execinfo.h>
 #include "map.h"
 // #include <pthread.h>
 /* Keeping buffer */
@@ -52,6 +53,9 @@ enum {
 enum {
   HTTP_USERNAME,
   HTTP_PASSWORD,
+  SERVER_ADMIN,
+  SERVER_PORT,
+  SERVER_SOFTWARE,
   FIX_COUNT
 };
 

@@ -508,7 +508,10 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   }
 
+  restructure_inbuf(afl->queue_cur, in_buf);
+
   memcpy(out_buf, in_buf, len);
+  // DEBUGF("outbuf: %s\n", out_buf);
 
   /*********************
    * PERFORMANCE SCORE *
@@ -3641,8 +3644,10 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
 
   }
 
-  memcpy(out_buf, in_buf, len);
+  restructure_inbuf(afl->queue_cur, in_buf);
 
+  memcpy(out_buf, in_buf, len);
+  
   /*********************
    * PERFORMANCE SCORE *
    *********************/

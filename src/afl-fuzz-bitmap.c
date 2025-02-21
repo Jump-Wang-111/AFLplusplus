@@ -525,7 +525,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
       if (unlikely(new_bits)) { classified = 1; }
 
     }
-
+    // DEBUGF("new bit: %d\n", new_bits);
     if (likely(!new_bits)) {
 
       if (unlikely(afl->crash_mode)) { ++afl->total_crashes; }

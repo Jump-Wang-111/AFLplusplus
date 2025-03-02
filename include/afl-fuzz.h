@@ -1196,6 +1196,8 @@ u32  calculate_score(afl_state_t *, struct queue_entry *);
 
 /* CGI fuzz*/
 
+void print_stack_trace();
+void debug_pair_list(cgi_pair *);
 int  add_pair_list(cgi_pair **, cgi_pair *);
 void free_pair_list(cgi_pair *);
 u32  size_pair2str(cgi_pair *);
@@ -1217,6 +1219,7 @@ u8   hook_fuzz_one(afl_state_t *);
 void save_crash(afl_state_t *, void *, u32);
 void init_range(afl_state_t *);
 u8   hook_common_fuzz_stuff(afl_state_t *, u8 *, u32);
+u8   hook_calibrate_case(afl_state_t *, struct queue_entry *, u8 *, u32 , u8);
 
 /* Bitmap */
 

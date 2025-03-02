@@ -19,6 +19,8 @@
 #define REGEX_STR_LEN 256
 #define ENV_MAX_LEN  4096
 
+#define NEW_ENV_FLAG        "NEW_ENV"
+
 /* Keeping a pair of key-value */
 typedef struct cgi_pair {
   char              *key;

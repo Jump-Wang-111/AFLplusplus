@@ -29,6 +29,9 @@
   #define NAME_MAX _XOPEN_NAME_MAX
 #endif
 
+/* CGI FUZZ */
+#define calibrate_case(afl, q, use_mem, handicap, from_queue) hook_calibrate_case(afl, q, use_mem, handicap, from_queue)
+
 /* Write bitmap to file. The bitmap is useful mostly for the secret
    -B option, to focus a separate fuzzing session on a particular
    interesting input without rediscovering all the others. */
@@ -644,8 +647,8 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
        successful. */
     res = calibrate_case(afl, afl->queue_top, mem, afl->queue_cycle - 1, 0);
     if (getenv("AFL_DEBUG")) {
-      DEBUGF("calibrate_case queue id: %d\n", afl->queue_top->id);
-      DEBUGF("calibrate_case res: %d\n", res);
+      DEBUGF("calibrate_case in save_if_interesting, queue id: %d\n", afl->queue_top->id);
+      DEBUGF("calibrate_case in save_if_interesting, res: %d\n", res);
     }
     
     if (unlikely(res == FSRV_RUN_ERROR)) {

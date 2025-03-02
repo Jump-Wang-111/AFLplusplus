@@ -31,6 +31,7 @@
 
 /* CGI FUZZ */
 #define common_fuzz_stuff(afl, out_buf, len) hook_common_fuzz_stuff(afl, out_buf, len)
+#define calibrate_case(afl, q, use_mem, handicap, from_queue) hook_calibrate_case(afl, q, use_mem, handicap, from_queue)
 
 /* MOpt */
 

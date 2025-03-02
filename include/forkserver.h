@@ -210,6 +210,14 @@ typedef struct afl_forkserver {
   /* CGI fuzz */
   u32         *shmem_cgi_fb_num;                /* nums of feedback envs            */
 
+  u8          *shmem_cgi_fb_stage;              /* stage for feedback of cgi fuzz */
+
+  u8          *shmem_cgi_fb_target;             /* target for feedback stage1&2 of cgi fuzz */
+
+  u8          *shmem_cgi_fb_pair;               /* pair count for feedback stage1&2 of cgi fuzz */
+
+  u8          *shmem_cgi_fb_tlen;               /* target len for feedback stage1&2 of cgi fuzz */
+
   u8          *shmem_cgi_fb_buf;                /* allocated memory for feedback of cgi fuzz */
 
   regex_env   *shmem_cgi_regex;                 /* shmem for path_info by hooked regexec */

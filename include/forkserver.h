@@ -214,7 +214,10 @@ typedef struct afl_forkserver {
 
   u8          *shmem_cgi_fb_target;             /* target for feedback stage1&2 of cgi fuzz */
 
-  u8          *shmem_cgi_fb_pair;               /* pair count for feedback stage1&2 of cgi fuzz */
+  u8          *shmem_cgi_fb_pair;               /* pair count for feedback stage1&2 of cgi fuzz, 
+                                                 * maybe serval pairs feedback of one env in one round,
+                                                 * eg: strcmp\0 aaa\0 strncmp\0 bbb ...
+                                                 */
 
   u8          *shmem_cgi_fb_tlen;               /* target len for feedback stage1&2 of cgi fuzz */
 

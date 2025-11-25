@@ -1,3 +1,4 @@
+sudo hwclock -s
 cd qemu_mode/
 CPU_TARGET=arm ./build_qemu_support.sh
 if [ $? == 0 ]

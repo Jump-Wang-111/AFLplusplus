@@ -8,22 +8,56 @@ char *method[METHOD_COUNT] = {
 	[DELETE] 	= "DELETE", 
 	[PATCH] 	= "PATCH"
 };
+int method_count = METHOD_COUNT;
 
-int 		method_count = METHOD_COUNT;
-char 		*path_info[1 << 12];
+char *content_type[] = {
+    "application/x-www-form-urlencoded", // Default
+    "application/json",                  // Modern APIs
+    "multipart/form-data",               // File uploads
+    "text/xml",                          // SOAP/XML-RPC
+    "text/plain"                         // Raw data
+};
+int content_type_count = CONTENT_TYPE_COUNT;
 
+// 1.0 implies no keep-alive usually
+char *http_ver[] = { 
+	[HTTP1_0]	= "HTTP/1.0", 
+	[HTTP1_1]	= "HTTP/1.1", 
+	[HTTP2_0]	= "HTTP/2.0"
+}; 
+int http_ver_count = HTTP_VER_COUNT;
+
+char *path_info[1 << 12];
+
+/* =========================================================
+   [RANGE] Variable Definitions (AFL++ Side)
+   ========================================================= */
 range_env cgi_range[RANGE_COUNT] = {
 	[PATH_INFO]                     = {"PATH_INFO", 0, path_info},
 	[REQUEST_METHOD]                = {"REQUEST_METHOD", &method_count, method},
-	[HTTP_X_HTTP_METHOD_OVERRIDE]   = {"HTTP_X_HTTP_METHOD_OVERRIDE", &method_count, method}
+	[HTTP_X_HTTP_METHOD_OVERRIDE]   = {"HTTP_X_HTTP_METHOD_OVERRIDE", &method_count, method},
+	[CONTENT_TYPE]					= {"CONTENT_TYPE", &content_type_count, content_type},
+	[SERVER_PROTOCOL]				= {"SERVER_PROTOCOL", &http_ver_count, http_ver},
 };
 
-char		*cgi_fix[FIX_COUNT][PAIR_ELEM_COUNT] = {
+/* =========================================================
+   [FIX] Variable Definitions (AFL++ Side)
+   
+   These are OPTIONAL variables. They are not guaranteed to exist 
+   in every request, but when they do, they usually hold specific 
+   standard values to trigger specific server configurations 
+   (e.g., SSL mode, Authenticated mode).
+   ========================================================= */
+char *cgi_fix[FIX_COUNT][PAIR_ELEM_COUNT] = {
 	[HTTP_USERNAME]					=	{"HTTP_USERNAME", "admin"},
 	[HTTP_PASSWORD]					=	{"HTTP_PASSWORD", "admin"},
-	[SERVER_ADMIN]					=	{"SERVER_ADMIN", "admin@example.com"},
-	[SERVER_PORT]					=	{"SERVER_PORT", "443"},
-	[SERVER_SOFTWARE]				=	{"SERVER_SOFTWARE", "AFL"}
+	[AUTH_TYPE] 					=	{"AUTH_TYPE", "Basic"},
+	[SERVER_ADMIN]					=	{"SERVER_ADMIN", "admin@localhost"},
+	[HTTPS]							=	{"HTTPS", "on"},
+	[REMOTE_USER]					=	{"REMOTE_USER", "admin"},
+	[HTTP_X_REQUESTED_WITH]			=	{"HTTP_X_REQUESTED_WITH", "XMLHttpRequest"},
+	[HTTP_CONNECTION]				=	{"HTTP_CONNECTION", "keep-alive"},
+	[HTTP_CACHE_CONTROL]			=	{"HTTP_CACHE_CONTROL", "no-cache"},
 };
 
 
@@ -694,6 +728,12 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 	// 	return;
 	// }
 	// char *info = eq + 1;
+
+	if (!strcmp(env_name, "PATH_INFO")) {
+		DEBUGF("Skip PATH_INFO in feedback stage2");
+		return;
+	}
+
 	char *info = env;
 	char fb_all[64][128];
 	char func_all[64][128];
@@ -740,7 +780,7 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 		if (!strcmp(func, "regexec")) {
 
 			char cmd[256];
-			sprintf(cmd, "python3 ./plugin/random_regex.py %s", fb);
+			sprintf(cmd, "python3 ./plugin/gen_regex_one.py %s", fb);
 
 			FILE *fp = popen(cmd, "r");
 			char buffer[128];
@@ -793,10 +833,10 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 	DEBUGF("cgi_feedback_num:%d\n", *(afl->fsrv.shmem_cgi_fb_num));
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
 		
-		/* 1% percent do feedback */
-		// if (rand_below(afl, 100) < 99) continue;
+		/* 10% percent do feedback */
+		if (rand_below(afl, 100) < 90) continue;
 
-		/* TODO: change feedbak
+		/*  change feedbak
 			1st time: env_name
 			2nd time: env_name=target */ 
 		char *env = cgi_feedback_buf + i*ENV_MAX_LEN;

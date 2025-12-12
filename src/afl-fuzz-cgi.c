@@ -830,7 +830,7 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
 	u32 needed_size = len; // or afl_alloc_bufsize(out_buf) ?
 
-	DEBUGF("cgi_feedback_num:%d\n", *(afl->fsrv.shmem_cgi_fb_num));
+	// DEBUGF("cgi_feedback_num:%d\n", *(afl->fsrv.shmem_cgi_fb_num));
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
 		
 		/* 10% percent do feedback */

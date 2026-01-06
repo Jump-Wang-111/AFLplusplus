@@ -897,11 +897,11 @@ u8 trim_case(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
     ** trim input, just keep key-values which need to mutate*/
   if (afl->cgi_fuzz == 1) {
 
-    trim_cgi_input(q, in_buf);
+    trim_cgi_input(afl, q, in_buf);
 
-    // if (orig_len != q->len) {
-    //   queue_testcase_retake(afl, q, orig_len);
-    // }
+    if (orig_len != q->len) {
+      queue_testcase_retake(afl, q, orig_len);
+    }
     fault = 0;
     goto abort_trimming;
 

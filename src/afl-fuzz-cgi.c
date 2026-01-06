@@ -1,6 +1,11 @@
 #include "afl-fuzz.h"
 
-char *method[METHOD_COUNT] = {
+/* =========================================================
+   1. Candidate Arrays (候选值数据源)
+   ========================================================= */
+
+// HTTP Methods
+static char *c_methods[METHOD_COUNT] = {
 	[GET] 		= "GET", 
 	[POST] 		= "POST", 
 	[PUT] 		= "PUT", 
@@ -8,61 +13,156 @@ char *method[METHOD_COUNT] = {
 	[DELETE] 	= "DELETE", 
 	[PATCH] 	= "PATCH"
 };
-int method_count = METHOD_COUNT;
 
-char *content_type[] = {
-    "application/x-www-form-urlencoded", // Default
-    "application/json",                  // Modern APIs
-    "multipart/form-data",               // File uploads
-    "text/xml",                          // SOAP/XML-RPC
-    "text/plain"                         // Raw data
-};
-int content_type_count = CONTENT_TYPE_COUNT;
-
-// 1.0 implies no keep-alive usually
-char *http_ver[] = { 
+// HTTP Protocols
+static char *c_protocols[] = {
 	[HTTP1_0]	= "HTTP/1.0", 
 	[HTTP1_1]	= "HTTP/1.1", 
 	[HTTP2_0]	= "HTTP/2.0"
-}; 
-int http_ver_count = HTTP_VER_COUNT;
-
-char *path_info[1 << 12];
-
-/* =========================================================
-   [RANGE] Variable Definitions (AFL++ Side)
-   ========================================================= */
-range_env cgi_range[RANGE_COUNT] = {
-	[PATH_INFO]                     = {"PATH_INFO", 0, path_info},
-	[REQUEST_METHOD]                = {"REQUEST_METHOD", &method_count, method},
-	[HTTP_X_HTTP_METHOD_OVERRIDE]   = {"HTTP_X_HTTP_METHOD_OVERRIDE", &method_count, method},
-	[CONTENT_TYPE]					= {"CONTENT_TYPE", &content_type_count, content_type},
-	[SERVER_PROTOCOL]				= {"SERVER_PROTOCOL", &http_ver_count, http_ver},
 };
 
+// Content Types (用于 Hybrid 模式的字典部分)
+static char *c_content_types[] = {
+    "application/x-www-form-urlencoded; type=123", // Default
+    "application/json; charset=utf-8",                  // Modern APIs
+    "multipart/form-data; boundary=---------------------------12345",               // File uploads
+    "text/xml; action=123",                          // SOAP/XML-RPC
+    "text/plain"                         // Raw data
+};
+
+// Path Info (这里提供一些基础默认值，如果你有动态 Regex 生成的路径，
+// 可以在运行时通过 init_range 函数覆盖这里的指针)
+static char *c_paths[] = {
+    "/index.html",
+    "/admin",
+    "/login",
+    "/api/v1/user",
+};
+
+char *g_path_info[1 << 12];
+
+/* 辅助宏：计算数组长度 */
+#define ARR_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+
 /* =========================================================
-   [FIX] Variable Definitions (AFL++ Side)
-   
-   These are OPTIONAL variables. They are not guaranteed to exist 
-   in every request, but when they do, they usually hold specific 
-   standard values to trigger specific server configurations 
-   (e.g., SSL mode, Authenticated mode).
+   2. Global Variable Definitions (全局定义表)
    ========================================================= */
-char *cgi_fix[FIX_COUNT][PAIR_ELEM_COUNT] = {
-	[HTTP_USERNAME]					=	{"HTTP_USERNAME", "admin"},
-	[HTTP_PASSWORD]					=	{"HTTP_PASSWORD", "admin"},
-	[AUTH_TYPE] 					=	{"AUTH_TYPE", "Basic"},
-	[SERVER_ADMIN]					=	{"SERVER_ADMIN", "admin@localhost"},
-	[HTTPS]							=	{"HTTPS", "on"},
-	[REMOTE_USER]					=	{"REMOTE_USER", "admin"},
-	[HTTP_X_REQUESTED_WITH]			=	{"HTTP_X_REQUESTED_WITH", "XMLHttpRequest"},
-	[HTTP_CONNECTION]				=	{"HTTP_CONNECTION", "keep-alive"},
-	[HTTP_CACHE_CONTROL]			=	{"HTTP_CACHE_CONTROL", "no-cache"},
+
+cgi_var_def_t g_var_defs[KNOWN_VAR_COUNT] = {
+
+    /* =========================================================
+	   [FIX] Variable Definitions (AFL++ Side)
+	
+	   These are OPTIONAL variables. They are not guaranteed to exist 
+	   in every request, but when they do, they usually hold specific 
+	   standard values to trigger specific server configurations 
+	   (e.g., SSL mode, Authenticated mode).
+       ========================================================= */
+    
+    [HTTP_USERNAME] = { 
+        .key = "HTTP_USERNAME", 
+        .type = TYPE_FIX, 
+        .default_val = "admin" 
+    },
+    
+    [HTTP_PASSWORD] = { 
+        .key = "HTTP_PASSWORD", 
+        .type = TYPE_FIX, 
+        .default_val = "admin" // 或者 "password"
+    },
+    
+    [SERVER_ADMIN] = { 
+        .key = "SERVER_ADMIN", 
+        .type = TYPE_FIX, 
+        .default_val = "admin@localhost" 
+    },
+    
+    [AUTH_TYPE] = { 
+        .key = "AUTH_TYPE", 
+        .type = TYPE_FIX, 
+        .default_val = "Basic" 
+    },
+    
+    [HTTPS] = { 
+        .key = "HTTPS", 
+        .type = TYPE_FIX, 
+        .default_val = "on" 
+    },
+    
+    [REMOTE_USER] = { 
+        .key = "REMOTE_USER", 
+        .type = TYPE_FIX, 
+        .default_val = "admin" 
+    },
+    
+    [HTTP_X_REQUESTED_WITH] = { 
+        .key = "HTTP_X_REQUESTED_WITH", 
+        .type = TYPE_FIX, 
+        .default_val = "XMLHttpRequest" 
+    },
+    
+    [HTTP_CONNECTION] = { 
+        .key = "HTTP_CONNECTION", 
+        .type = TYPE_FIX, 
+        .default_val = "keep-alive" 
+    },
+    
+    [HTTP_CACHE_CONTROL] = { 
+        .key = "HTTP_CACHE_CONTROL", 
+        .type = TYPE_FIX, 
+        .default_val = "no-cache" 
+    },
+
+    /* =========================================================
+   	   [RANGE] Variable Definitions (AFL++ Side)
+       ========================================================= */
+    /* 需要定义 Candidates 数组和数量，Type 为 TYPE_RANGE */
+
+    [PATH_INFO] = { 
+        .key = "PATH_INFO", 
+        .type = TYPE_RANGE, 
+        .num_candidates = ARR_SIZE(c_paths), 
+        .candidates = c_paths 
+        /* 注意：如果你依然使用共享内存动态加载 path_info，
+           需要在 setup_cgi_regex_shmem 中覆盖这里的 candidates 指针 */
+    },
+
+    [REQUEST_METHOD] = { 
+        .key = "REQUEST_METHOD", 
+        .type = TYPE_RANGE, 
+        .num_candidates = ARR_SIZE(c_methods), 
+        .candidates = c_methods 
+    },
+
+    [HTTP_X_HTTP_METHOD_OVERRIDE] = { 
+        .key = "HTTP_X_HTTP_METHOD_OVERRIDE", 
+        .type = TYPE_RANGE, 
+        .num_candidates = ARR_SIZE(c_methods), 
+        .candidates = c_methods 
+    },
+
+    [SERVER_PROTOCOL] = { 
+        .key = "SERVER_PROTOCOL", 
+        .type = TYPE_RANGE, 
+        .num_candidates = ARR_SIZE(c_protocols), 
+        .candidates = c_protocols 
+    },
+
+    /* --- Hybrid Variables (混合模式) --- */
+    /* 既有 Candidates 用于 Range 注入，也允许随机变异 */
+
+    [CONTENT_TYPE] = { 
+        .key = "CONTENT_TYPE", 
+        .type = TYPE_HYBRID, 
+        .num_candidates = ARR_SIZE(c_content_types), 
+        .candidates = c_content_types,
+        .default_val = "application/x-www-form-urlencoded" // 默认值
+    }
 };
 
 
 void print_stack_trace() {
-
 
     void *buffer[100];
 
@@ -87,279 +187,346 @@ void print_stack_trace() {
 
 }
 
-void debug_pair_list(cgi_pair *list) {
-	DEBUGF("Debug pailist:\n");
-	while (list != NULL) {
-		DEBUGF("%s=%s\n", list->key, list->value);
-		list = list->next;
+void debug_cgi_request(struct queue_entry *q) {
+	DEBUGF("[CGI FUZZ] Debug cgi req\n");
+	cgi_request_t *req = &q->cgi_req;
+	for (int i = 0; i < req->count; i++) {
+		cgi_entry_t *item = &req->items[i];
+		DEBUGF("[CGI FUZZ] key:%s, value:%s, id:%d\n", item->key, item->val, item->def_id);
 	}
 }
 
-int add_pair_list(cgi_pair **list, cgi_pair *pair) {
-
-	if (*list == NULL) {
-		*list = pair;
-		return 1;
+void debug_mutated_blob(u8 *blob, u32 len) {
+	DEBUGF("[CGI FUZZ] Debug mutated blob:\n");
+	u8 *p = blob;
+	while (p - blob < len) {
+		DEBUGF("[CGI FUZZ] %s\n", (char *)p);
+		p += strlen(p) + 1;
 	}
-
-	pair->next = *list;
-	*list = pair;
-
-	return 0;
 }
 
-void free_pair_list(cgi_pair *list) {
-	
-	while (list != NULL)
-	{
-		cgi_pair *tmp = list;
-		list = list->next;
-		if (tmp->key) { 
-			if(getenv("AFL_DEBUG")) DEBUGF("free key: %s\n", tmp->key);
-			free(tmp->key); 
-			tmp->key = NULL; 
-		}
-		if (tmp->value) { 
-			if(getenv("AFL_DEBUG")) DEBUGF("free value: %s\n", tmp->value);
-			free(tmp->value); 
-			tmp->value = NULL; 
-		}
-		free(tmp);
-		tmp = NULL;
-	}
-
+// 快速查找 ID (O(N) 但 N 很小，极快)
+int lookup_var_id(char *key) {
+    for (int i = 0; i < KNOWN_VAR_COUNT; i++) {
+        if (strcmp(g_var_defs[i].key, key) == 0) return i;
+    }
+    return -1;
 }
 
-u8 in_pair_list(cgi_pair *list, char *name) {
-	
-	while (list != NULL) {
-		if (!strcmp(list->key, name)) return 1;
-		list = list->next;  
-	}
+u8 in_cgi_req(struct queue_entry *q, char *name) {
+	cgi_request_t *req = &q->cgi_req;
 
-	return 0;
-}
-
-u8 in_all_pair_list(struct queue_entry *q, char *name) {
-
-	if (in_pair_list(q->fix_pair_list, name) ||
-		in_pair_list(q->range_pair_list, name) ||
-		in_pair_list(q->random_pair_list, name))
-		return 1;
-	
-	return 0;
-}
-
-u32 size_pair2str(cgi_pair *l) {
-  
-	u32 len = 0;
-	while (l != NULL) {
-		len += strlen(l->key);
-		len += strlen(l->value);
-		len += 3;
-		l = l->next;
-	}
-
-	return len;
-}
-
-u8* pair2str(u8 *buf, cgi_pair *l) {
-  
-	while (l != NULL) {
-		char *p = strchr(l->value, '\n');
-		if (p != NULL) *p = '\0';
-
-		buf += sprintf(buf, "%s=%s\n", l->key, l->value);
-		l = l->next;
-	}
-  
-	return buf;
-}
-
-u32 size_array2str(cgi_pair *l, char **array, int array_size) {
-	
-	u32 len = 0;
-	while (l != NULL) {
-		// DEBUGF("%s\n", l->key);
-		len += strlen(l->key);
-		len += 2;
-		l = l->next;
-	}
-
-	for (int i = 0; i < array_size; i++) {
-		if (array[i]) {
-			len += strlen(array[i]);
-			// DEBUGF("%s\n", array[i]);
-		}
-	}
-
-	return len;
-}
-
-u8* random_array2str(u8 *buf, cgi_pair *l, char **array, int array_size) {
-  
-	for (int i = 0; i < array_size; i++) {
-
-		char *p = strchr(array[i], '\n');
-		if (p != NULL) *p = '\0';
-
-		buf += sprintf(buf, "%s=%s\n", l->key, array[i]);
-		l = l->next;
-	}
-  
-	return buf;
-}
-
-u8* range_array2str(u8 *buf, cgi_pair *l, char **array, int array_size) {
-  
-	for (int i = 0; i < array_size; i++) {
-		if (!array[i]) continue;
+	char first_char = name[0];
+	for (int i = 0; i < req->count; i++) {
+		cgi_entry_t *item = &req->items[i];
 		
-		// char *p = strchr(array[i], '\n');
-		// if (p != NULL) *p = '\0';
+		if (unlikely(!item->key)) continue;
 
-		buf += sprintf(buf, "%s=%s\n", cgi_range[i].key, array[i]);
+		if (item->key[0] == first_char && strcmp(item->key, name) == 0) {
+            return 1;
+        }
 	}
-  
-	return buf;
+
+	return 0;
 }
 
-/* Trim input testcase*/
-void trim_cgi_input(struct queue_entry *q, u8 *in_buf) {
+// 【解析】将二进制流解析为结构体 (无 malloc，全是原位指针)
+// blob_buf不为0时，重定向fix类型，提取需要变异的部分拷贝到blob_buf
+u32 cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf) {
     
-	// DEBUGF("trim_in_buf: %s\n", in_buf);
-	u8 *st = in_buf, *ed, *tmp, *buf_end = in_buf + q->len;
+    cgi_request_t *req = &q->cgi_req; 
+    req->count = 0;
 
-	/* Trim input to pairs */
-	while (st < buf_end)
-	{
-		tmp = st;
-		while (*tmp != '=') tmp++;
+    u8 *cursor = in_buf;
+    u8 *end = in_buf + len;
 
-		ed = tmp;
-		while (*ed != '\n') ed++;
+	u8 *blob_cursor = blob_buf;
 
-		cgi_pair *pair = malloc(sizeof(cgi_pair));
-		
-		pair->key = malloc(tmp - st + 1);
-		*tmp++ = '\0';
-		strcpy(pair->key, st);
-		
-		pair->value = malloc(ed - tmp + 1);
-		*ed++ = '\0';
-		strcpy(pair->value, tmp);
-		// if (getenv("CGI_DEBUG"))
-		//   fprintf(stderr, "%s=%s\n", pair->key, pair->value);
-		
-		pair->next = NULL;
-
-		for (int i = 0; i < FIX_COUNT; i++) {
-			if (!strcmp(cgi_fix[i][KEY], pair->key)) {
-				
-				free(pair->value);
-				pair->value = malloc(strlen(cgi_fix[i][VALUE]) + 1);
-				strcpy(pair->value, cgi_fix[i][VALUE]);
-
-				add_pair_list(&q->fix_pair_list, pair);
-
-				goto NEXT_PAIR;
-			}
-		}
-
-		for (int i = 0; i < RANGE_COUNT; i++) {
-			if (!strcmp(cgi_range[i].key, pair->key)) {
-				
-				add_pair_list(&q->range_pair_list, pair);
-				q->range_pair_array[i] = pair->value;
-				
-				goto NEXT_PAIR;
-			}
-		}
-		
-		add_pair_list(&q->random_pair_list, pair);
-
-NEXT_PAIR:
-		st = ed;
+	if (getenv("AFL_DEBUG")) {
+		DEBUGF("[CGI FUZZ] Beging cgi_parse_input:\n");
+		DEBUGF("%s\n", (char *)in_buf);
 	}
-	
+
+    while (cursor < end && req->count < MAX_ENV_VARS) {
+        
+        // 1. 定位 Key
+        char *key = (char*)cursor;
+		u8 *eq = (u8*)memchr(cursor, '=', end - cursor);
+        if (!eq) break; 
+        *eq = '\0'; // 原地切断 Key
+
+        // 2. 定位 Value
+        char *val = (char*)(eq + 1);
+        u8 *nl = (u8*)memchr((u8*)val, '\n', end - (u8*)val);
+		size_t vlen;
+        
+        if (nl) {
+            *nl = '\0'; // 原地切断 Value
+			vlen = nl - (u8*)val;
+            cursor = nl + 1;
+        } else {
+			vlen = end - (u8*)val;
+            cursor = end; // 最后一行
+        }
+
+        // 3. 填充 Entry
+        cgi_entry_t *item = &req->items[req->count++];
+        item->key = key;
+        item->val = val;
+        
+        // 4. 关联元数据
+		int id = lookup_var_id(key);
+        item->def_id = id;
+
+		// 常规解析到此为止
+		if (!blob_buf) continue;
+
+		// 如果传递了blob_buf将按类型解析，填充blob_buf用于fuzz
+		if (id >= 0) {
+            item->key = g_var_defs[id].key; // 修正为静态 Key
+        } else {
+            // 未知 Key，备份下来，防止 in_buf 被释放或覆盖
+            strncpy(item->unknown_key, key, 63);
+            item->unknown_key[63] = '\0';
+            item->key = item->unknown_key;
+        }
+        
+		u8 is_random = 1;
+        if (id >= 0 && g_var_defs[id].type == TYPE_FIX) {
+            item->val = g_var_defs[id].default_val;
+			is_random = 0;
+        }
+
+		if (id >= 0 && g_var_defs[id].type == TYPE_RANGE) {
+            is_random = 0;
+        }
+
+		if (is_random) {
+			memcpy(blob_cursor, val, vlen);
+			blob_cursor += vlen;
+			*blob_cursor++ = '\0'; 
+		}
+    }
+
+	if (getenv("AFL_DEBUG")) {
+		debug_cgi_request(q);
+		debug_mutated_blob(blob_buf, blob_cursor - blob_buf);
+	}
+	return blob_cursor - blob_buf;
 }
 
-/* Restructure input*/
-void restructure_inbuf(struct queue_entry *q, u8 *in_buf) {
-	
-	cgi_pair *l = q->random_pair_list;
-	u8 *p = in_buf;
-	while (l != NULL)
-	{
-		// p += sprintf(p, "%s", l->key);
-		strcpy(p, l->value);
-		p += strlen(l->value);
-
-		// free(l->value);
-		// l->value = NULL;
-
-		*p++ = '\0';
-		l = l->next;
-	}
-	*p = 0;
-	q->len = p - in_buf;
-	
-}
-
+/* 统一重组函数：
+   1. 如果 mutated_blob == NULL -> 这里的逻辑是 Trim/Save (使用 item->val)
+   2. 如果 mutated_blob != NULL -> 这里的逻辑是 Fuzzing (从 blob 读取值)
+*/
 u8* __attribute__((hot))
-recombine_input(afl_state_t *afl, u8 *out_buf, u32 len) {
+cgi_recombine_input(afl_state_t *afl, u8 *mutated_blob, u32 blob_len, u32 *out_len) {
+    
+    cgi_request_t *req = &afl->queue_cur->cgi_req;
+    
+	// 计算所需总长度,只多不少
+	size_t total_len = 0;
+	for (int i = 0; i < req->count; i++) {
+		cgi_entry_t *item = &req->items[i];
+		
+		if (unlikely(!item->key)) item->key = "";
+		if (unlikely(!item->val)) item->val = "";
 
-	u8 *st = out_buf, *ed = out_buf + len, *tmp = st;
+		total_len += strlen(item->key);
+		total_len += 1; // '='
+		total_len += strlen(item->val);
+		total_len += 1; // '\n'
+	}
+	total_len += 1; // null terminator
+	total_len += blob_len;	// random val size
+	total_len += ENV_MAX_LEN; // 冗余
 
-	// DEBUGF("orign out buf:%s\n", out_buf);
-	/*  Check the result of mutate.
-		If out_buf cannot be devided into random_pair_list,
-		(afl break the struct of cgi input)
-		we will return
-	*/
-	cgi_pair *l = afl->queue_cur->random_pair_list;
-	char random_array[MAX_TEMP_STR][ENV_MAX_LEN];
-	
-	char *ra[MAX_TEMP_STR];
-	for (int i = 0; i < MAX_TEMP_STR; i++) {
-		ra[i] = random_array[i];
+	u8 *new_buf = afl_realloc(AFL_BUF_PARAM(new), total_len);
+	if (unlikely(!new_buf)) {
+        FATAL("Unable to allocate memory for recombine_input (%zu bytes)", total_len);
+    }
+
+	u8 *out = new_buf;
+
+	// Trim/Save
+	if (!mutated_blob) {
+
+		for (int i = 0; i < req->count; i++) {
+			cgi_entry_t *item = &req->items[i];
+			
+			size_t k_len = strlen(item->key);
+        	size_t v_len = strlen(item->val);
+
+			memcpy(out, item->key, k_len);
+			out += k_len;
+			*out++ = '=';
+
+			memcpy(out, item->val, v_len);
+			out += v_len;
+			*out++ = '\n';
+		}
+
+		*out_len = (u32)(out - new_buf);
+		*out = '\0'; // 补上结尾
+
+		if(getenv("AFL_DEBUG")){
+			DEBUGF("[CGI FUZZ] After trim--new_buf_len:%u\n", *out_len);
+			DEBUGF("[CGI FUZZ] After trim--new_buf:%s\n", new_buf);
+		} 
+
+		return new_buf;
+	}
+
+    // For fuzz
+	if (getenv("AFL_DEBUG")) {
+		debug_mutated_blob(mutated_blob, blob_len);
 	}
 	
-	int n = 0;
-	while (l != NULL) {
-		if (tmp >= ed) break;
+    u8 *blob_cursor = mutated_blob;
+    u8 *blob_end = mutated_blob + blob_len;
 
-		int size = strlen(tmp);
-		// if (size == 0) { tmp++; continue; }
+    for (int i = 0; i < req->count; i++) {
+        cgi_entry_t *item = &req->items[i];
+        int id = item->def_id;
+        
+        // 1. 写入 Key
+        size_t k_len = strlen(item->key);
+        memcpy(out, item->key, k_len);
+        out += k_len;
+        *out++ = '=';
 
-		strncpy(random_array[n], tmp, ENV_MAX_LEN);
-		// snprintf(random_array[n], ENV_MAX_LEN, "%s=%s", l->key, tmp);
+        // 2. 写入 Val
+        char *src_val_ptr = NULL;
+        size_t src_val_len = 0;
 
-		if (++n > MAX_TEMP_STR) break;
+        // 如果是 FIX/RANGE 变量，使用指针中的值
+        if (id >= 0 && (g_var_defs[id].type == TYPE_FIX || g_var_defs[id].type == TYPE_RANGE)) {
+            src_val_ptr = item->val;
+            src_val_len = strlen(src_val_ptr);
+			memcpy(out, src_val_ptr, src_val_len);
+			out += src_val_len;
+			*out++ = '\n';
+			continue;
+        }
 
-		tmp += size + 1;
-		l = l->next;
+		// 其他变量从变异中取
+		if (blob_cursor < blob_end) {
+			u8 *next_null = memchr(blob_cursor, '\0', blob_end - blob_cursor);
+			if (next_null) {
+				src_val_len = next_null - blob_cursor;
+				src_val_ptr = (char*)blob_cursor;
+				blob_cursor = next_null + 1; // 跳过 \0
+			} else {
+				// 没有分隔符了，取剩余全部
+				src_val_len = blob_end - blob_cursor;
+				src_val_ptr = (char*)blob_cursor;
+				blob_cursor = blob_end;
+			}
+		} 
+		
+		if (src_val_len > 0) {
+			memcpy(out, src_val_ptr, src_val_len);
+			out += src_val_len;
+		}
+		*out++ = '\n';
+    }
+    
+	*out_len = (u32)(out - new_buf);
+    *out = '\0';
+
+	if(getenv("AFL_DEBUG")){
+		DEBUGF("[CGI FUZZ] Ready to fuzz--new_buf_len:%u\n", *out_len);
+		DEBUGF("[CGI FUZZ] Ready to fuzz--new_buf:%s\n", new_buf);
 	}
-	
-	if (n >= MAX_TEMP_STR || l != NULL) return 0;
 
-	/* Recombine input from lists and arrays*/
-	len = 0;
-	len += size_pair2str(afl->queue_cur->fix_pair_list);
-	len += size_array2str(afl->queue_cur->range_pair_list, afl->queue_cur->range_pair_array, RANGE_COUNT);
-	len += size_array2str(afl->queue_cur->random_pair_list, ra, n);
+    return new_buf;
+}
 
-	/* We do not want to affect out_buf in fuzz_one, so we alloc a new space for fuzz, named new_buf */
-	u8 *new_buf = afl_realloc(AFL_BUF_PARAM(new), len);
+void cgi_optimize_structure(afl_state_t *afl) {
+	cgi_request_t *req = &afl->queue_cur->cgi_req;
 
-	u8 *tmp_buf = new_buf;
-	tmp_buf = pair2str(tmp_buf, afl->queue_cur->fix_pair_list);
-	tmp_buf = range_array2str(tmp_buf, afl->queue_cur->range_pair_list, afl->queue_cur->range_pair_array, RANGE_COUNT);
-	tmp_buf = random_array2str(tmp_buf, afl->queue_cur->random_pair_list, ra, n);
+	// 双指针遍历，i 是当前考察的元素
+    for (int i = 0; i < req->count; i++) {
+        int should_delete = 0;
+        cgi_entry_t *curr = &req->items[i];
 
-	if(getenv("AFL_DEBUG")) DEBUGF("new_buf:%s\n", new_buf);
-	// print_stack_trace();
-	return new_buf;
+        // --- 策略 A: 检查重复 Key (保留第一个) ---
+        // 向前扫描 0 到 i-1，看是否出现过
+        for (int j = 0; j < i; j++) {
+            if (strcmp(req->items[j].key, curr->key) == 0) {
+                should_delete = 1;
+                break;
+            }
+        }
+
+        // --- 策略 B: 检查空值 (可选) ---
+        // if (strlen(curr->val) == 0) should_delete = 1;
+
+        if (should_delete) {
+            // [数组删除操作]
+            // 如果不是最后一个元素，需要把后面的向前搬移
+            if (i < req->count - 1) {
+                // 计算需要移动的内存大小: (剩余元素数量) * sizeof(entry)
+                size_t move_size = (req->count - 1 - i) * sizeof(cgi_entry_t);
+                memmove(&req->items[i], &req->items[i+1], move_size);
+            }
+            
+            // 数量减一
+            req->count--;
+            
+            // 关键：i 回退一步，因为原来的 i+1 现在变成了 i，下轮需要重新检查它
+            i--; 
+        }
+    }
+}
+
+// TODO: 检查trim逻辑
+/* Trim 逻辑：解析 -> 格式化清洗 -> 写回
+   利用 recombine_input(NULL) 模式实现
+*/
+u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
+    
+    if (unlikely(afl->disable_trim)) return 0;
+    
+    // 解析 (Parse)
+    // 建立骨架，item->val 指向 in_buf
+    cgi_parse_input(q, in_buf, q->len, NULL);
+    
+	// 去重等操作
+	cgi_optimize_structure(afl);
+
+    // 清洗重组 (Sanitize / Serialize)
+    // 【核心】传入 NULL，告诉 recombine 使用结构体里的原始值
+    // 这样就完成了 "Text -> Struct -> Clean Text" 的过程
+	u32 clean_len = 0;
+    u8 *clean_buf = cgi_recombine_input(afl, NULL, 0, &clean_len); 
+
+    // 3. 检查并写回磁盘 (Commit)
+    // 只要长度变了（通常是变小），或者你想强制格式化，就写回
+    if (clean_len != q->len) {
+
+		if(getenv("AFL_DEBUG")){
+			DEBUGF("[CGI FUZZ] Len changed after trim, write back\n");
+		}
+        
+        s32 fd = open(q->fname, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (fd < 0) PFATAL("Unable to open '%s'", q->fname);
+        
+        ck_write(fd, clean_buf, clean_len, q->fname);
+        close(fd);
+
+        // 更新 Input len
+        q->len = clean_len;
+        
+    }
+
+	// 同步内存 buffer (非常重要！)
+	// 因为 fuzz_one 后面可能会继续用 in_buf，必须让它和磁盘保持一致
+	memcpy(in_buf, clean_buf, clean_len);
+	in_buf[clean_len] = 0;
+
+    // 返回 0 表示 Trim 完成（我们不需要 AFL 原生的二进制 Trim 循环）
+    return 0;
 }
 
 void setup_cgi_feedback_shmem(afl_state_t *afl) {
@@ -367,8 +534,8 @@ void setup_cgi_feedback_shmem(afl_state_t *afl) {
 	afl->cgi_feedback = ck_alloc(sizeof(sharedmem_t));
 
 	// we need to set the non-instrumented mode to not overwrite the SHM_ENV_VAR
-	u8 *map = afl_shm_init(afl->cgi_feedback, ENV_NAME_MAX_LEN * ENV_MAX_LEN + sizeof(u32) * 5, 1);
-	memset(map, 0, ENV_NAME_MAX_LEN * ENV_MAX_LEN + sizeof(u32) * 5);
+	u8 *map = afl_shm_init(afl->cgi_feedback, 32 * FD_ENTRY_LEN + sizeof(u32) * 5, 1);
+	memset(map, 0, 32 * FD_ENTRY_LEN + sizeof(u32) * 5);
 
 	if (!map) { FATAL("BUG: Zero return from cgi_shm_init."); }
 
@@ -385,10 +552,16 @@ void setup_cgi_feedback_shmem(afl_state_t *afl) {
 }
 
 void init_range(afl_state_t *afl) {
-	cgi_range[PATH_INFO].key		= afl->fsrv.shmem_cgi_regex->env_name;
-	cgi_range[PATH_INFO].num		= &(afl->fsrv.shmem_cgi_regex->num_of_regex);
+	// cgi_range[PATH_INFO].key		= afl->fsrv.shmem_cgi_regex->env_name;
+	// cgi_range[PATH_INFO].num		= &(afl->fsrv.shmem_cgi_regex->num_of_regex);
+	// for (int i = 0; i < 4096; i++) {
+	// 	cgi_range[PATH_INFO].value[i] = afl->fsrv.shmem_cgi_regex->path_info_str[i];
+	// }
+
+	g_var_defs[PATH_INFO].num_candidates = afl->fsrv.shmem_cgi_regex->num_of_regex;
+	g_var_defs[PATH_INFO].candidates = g_path_info;
 	for (int i = 0; i < 4096; i++) {
-		cgi_range[PATH_INFO].value[i] = afl->fsrv.shmem_cgi_regex->path_info_str[i];
+		g_var_defs[PATH_INFO].candidates[i] = afl->fsrv.shmem_cgi_regex->path_info_str[i];
 	}
 	// cgi_range[PATH_INFO].value	= afl->fsrv.shmem_cgi_regex->path_info_str;
 }
@@ -483,8 +656,8 @@ void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 	// DEBUGF("Queue id: %d.\n", q->id);
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
 
-		char *env_name = cgi_feedback_buf + i*ENV_MAX_LEN;
-		if (in_all_pair_list(q, env_name)) continue;
+		char *env_name = cgi_feedback_buf + i*FD_ENTRY_LEN;
+		if (in_cgi_req(q, env_name)) continue;
 
 		needed_size += strlen(env_name);
 		needed_size += strlen(NEW_ENV_FLAG);
@@ -516,8 +689,8 @@ void save_data(afl_state_t *afl) {
 		perror("Error opening file");
 		return;
 	}
-	for (int j = 0; j < *(cgi_range[PATH_INFO].num); j++) {
-		fprintf(fp, "%s\n", cgi_range[PATH_INFO].value[j]);
+	for (int j = 0; j < g_var_defs[PATH_INFO].num_candidates; j++) {
+		fprintf(fp, "%s\n", g_var_defs[PATH_INFO].candidates[j]);
 	}
 	fclose(fp);
 
@@ -527,7 +700,7 @@ void save_data(afl_state_t *afl) {
 		return;
 	}
 	for (int j = 0; j < *(afl->fsrv.shmem_cgi_fb_num); j++) {
-		fprintf(fp, "%s\n", afl->fsrv.shmem_cgi_fb_buf + j*ENV_MAX_LEN);
+		fprintf(fp, "%s\n", afl->fsrv.shmem_cgi_fb_buf + j*FD_ENTRY_LEN);
 	}
 	fclose(fp);
 }
@@ -547,6 +720,8 @@ void generate_regex(afl_state_t *afl) {
 		i++;
 	}
 	afl->fsrv.shmem_cgi_regex->num_of_regex = i;
+	g_var_defs[PATH_INFO].num_candidates = i;
+	DEBUGF("[CGI FUZZ] Now num of PATH_INFO: %d\n", g_var_defs[PATH_INFO].num_candidates);
 
 	pid_t pid = fork();
     if (pid < 0) {
@@ -596,6 +771,7 @@ u8 hook_fuzz_one(afl_state_t *afl) {
 	
 	// save_interesting(afl, afl->queue_cur);
 
+	DEBUGF("One round over...\n");
 
 	return skip;
 }
@@ -735,13 +911,13 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 	}
 
 	char *info = env;
-	char fb_all[64][128];
+	char fb_all[64][ENV_MAX_LEN];
 	char func_all[64][128];
 
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_pair); i++) {
 
 		char func[128];
-		char fb[128];
+		char fb[ENV_MAX_LEN];
 		
 		info += sprintf(func, "%s", info) + 1;
 		// strcpy(func, info);
@@ -760,7 +936,7 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 		}
 
 		int needed_size = len;
-		char temp[256];
+		char temp[ENV_MAX_LEN];
 
 		if (!strcmp(func, "strcmp") || !strcmp(func, "strncmp") || !strcmp(func, "strcasecmp") || !strcmp(func, "strncasecmp")) {
 			needed_size += sprintf(temp, "%s=%s\n", env_name, fb) + 1;
@@ -779,15 +955,15 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 		}
 		if (!strcmp(func, "regexec")) {
 
-			char cmd[256];
-			sprintf(cmd, "python3 ./plugin/gen_regex_one.py %s", fb);
+			char cmd[4096];
+			snprintf(cmd, sizeof(cmd), "python3 ./plugin/gen_regex_one.py %s", fb);
 
 			FILE *fp = popen(cmd, "r");
-			char buffer[128];
+			char buffer[4096];
 			fgets(buffer, sizeof(buffer), fp);
 			pclose(fp);
 			
-			needed_size += sprintf(temp, "%s=%s\n", env_name, buffer) + 1;
+			needed_size += snprintf(temp, sizeof(temp), "%s=%s\n", env_name, buffer) + 1;
 			out_buf = afl_realloc(AFL_BUF_PARAM(new), needed_size);
 			sprintf(out_buf + len, "%s=%s\n", env_name, buffer);
 
@@ -809,26 +985,25 @@ next_loop:
 u8 __attribute__((hot)) 
 hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 	
-	memset(afl->fsrv.shmem_cgi_fb_num, 0, ENV_MAX_LEN * ENV_NAME_MAX_LEN + sizeof(u32) * 5);
+	memset(afl->fsrv.shmem_cgi_fb_num, 0, sizeof(u32) * 5);
 	// int   cgi_feedback_num		= *(afl->fsrv.shmem_cgi_fb_num);
 	// int   cgi_feedback_stage	= *(afl->fsrv.shmem_cgi_fb_stage);
 	// int   cgi_feedback_target	= *(afl->fsrv.shmem_cgi_fb_target);
 	char *cgi_feedback_buf    	=   afl->fsrv.shmem_cgi_fb_buf;
 
-	out_buf = recombine_input(afl, out_buf, len);
+	u32 input_len;
+	out_buf = cgi_recombine_input(afl, out_buf, len, &input_len);
 	if (out_buf == 0) return 0;
-
-	len = strlen(out_buf);
 
 	/* Feedback stage 0 */
 	*(afl->fsrv.shmem_cgi_fb_stage) = 0;
-	u8 ret = common_fuzz_stuff(afl, out_buf, len);
+	u8 ret = common_fuzz_stuff(afl, out_buf, input_len);
 	if (ret) {
 		DEBUGF("common_fuzz_stuff return %d\n", ret);
 		return ret;
 	}
 
-	u32 needed_size = len; // or afl_alloc_bufsize(out_buf) ?
+	u32 needed_size = input_len; // or afl_alloc_bufsize(out_buf) ?
 
 	// DEBUGF("cgi_feedback_num:%d\n", *(afl->fsrv.shmem_cgi_fb_num));
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
@@ -839,12 +1014,12 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 		/*  change feedbak
 			1st time: env_name
 			2nd time: env_name=target */ 
-		char *env = cgi_feedback_buf + i*ENV_MAX_LEN;
+		char *env = cgi_feedback_buf + i*FD_ENTRY_LEN;
 		
 		char env_name[ENV_NAME_MAX_LEN];
 		strcpy(env_name, env);
 		
-		if (in_all_pair_list(afl->queue_cur, env_name)) continue;
+		if (in_cgi_req(afl->queue_cur, env_name)) continue;
 
 		needed_size += strlen(env);
 		needed_size += strlen(NEW_ENV_FLAG);
@@ -852,7 +1027,7 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
 		out_buf = afl_realloc(AFL_BUF_PARAM(new), needed_size);
 
-		sprintf(out_buf + len, "%s=%s\n", env, NEW_ENV_FLAG);
+		sprintf(out_buf + input_len, "%s=%s\n", env, NEW_ENV_FLAG);
 		
 		if (getenv("AFL_DEBUG")) {
 			DEBUGF("Try new env: %s\n", env);
@@ -871,11 +1046,11 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 		/* Feedback stage 2 */
 		if (strcmp(env, env_name)) {
 			*(afl->fsrv.shmem_cgi_fb_stage) = 2;
-			feedback_stage2(afl, env, env_name, out_buf, len);
+			feedback_stage2(afl, env, env_name, out_buf, input_len);
 			*(afl->fsrv.shmem_cgi_fb_stage) = 0;
 		}
 
-		needed_size = len;
+		needed_size = input_len;
 
 	}
 

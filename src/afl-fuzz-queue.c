@@ -625,9 +625,9 @@ void add_to_queue(afl_state_t *afl, u8 *fname, u32 len, u8 passed_det) {
   q->perf_score = 100;
 
   /* cgi fuzz*/
-  q->fix_pair_list = NULL;
-  q->range_pair_list = NULL;
-  q->random_pair_list = NULL;
+  // q->fix_pair_list = NULL;
+  // q->range_pair_list = NULL;
+  // q->random_pair_list = NULL;
 
 #ifdef INTROSPECTION
   q->bitsmap_size = afl->bitsmap_size;
@@ -722,9 +722,9 @@ void destroy_queue(afl_state_t *afl) {
 
     }
 
-    free_pair_list(q->fix_pair_list);
-    free_pair_list(q->range_pair_list);
-    free_pair_list(q->random_pair_list);
+    // free_pair_list(q->fix_pair_list);
+    // free_pair_list(q->range_pair_list);
+    // free_pair_list(q->random_pair_list);
 
     ck_free(q);
 

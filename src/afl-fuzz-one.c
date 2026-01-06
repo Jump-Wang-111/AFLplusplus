@@ -342,6 +342,9 @@ u8 fuzz_one_original(afl_state_t *afl) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
+  /* CGI FUZZ */
+  u8 *mid_buf;
+
 #ifdef IGNORE_FINDS
 
   /* In IGNORE_FINDS mode, skip any entries that weren't in the
@@ -431,6 +434,10 @@ u8 fuzz_one_original(afl_state_t *afl) {
   out_buf = afl_realloc(AFL_BUF_PARAM(out), len);
   if (unlikely(!out_buf)) { PFATAL("alloc"); }
 
+  /* CGI FUZZ */
+  mid_buf = afl_realloc(AFL_BUF_PARAM(mid), len);
+  if (unlikely(!mid_buf)) { PFATAL("alloc"); }
+
   afl->subseq_tmouts = 0;
 
   afl->cur_depth = afl->queue_cur->depth;
@@ -438,7 +445,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /*******************************************
    * CALIBRATION (only if failed earlier on) *
    *******************************************/
-
+  if (getenv("AFL_DEBUG")) DEBUGF("in_buf before calibrate:\n%s\n", in_buf);
   if (unlikely(afl->queue_cur->cal_failed)) {
 
     u8 res = FSRV_RUN_TMOUT;
@@ -474,8 +481,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /************
    * TRIMMING *
    ************/
-  // DEBUGF("TRIMMING\n");
-
+  if (getenv("AFL_DEBUG")) DEBUGF("in_buf before TRIMMING:\n%s\n", in_buf);
   if (unlikely(!afl->non_instrumented_mode && !afl->queue_cur->trim_done &&
                !afl->disable_trim)) {
     
@@ -509,10 +515,15 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   }
 
-  restructure_inbuf(afl->queue_cur, in_buf);
+  /* CGI FUZZ */
+  // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
+  memcpy(mid_buf, in_buf, len);
 
-  memcpy(out_buf, in_buf, len);
-  // DEBUGF("outbuf: %s\n", out_buf);
+  // Cut mid_buf to vars, copy random var val alone to out_buf.
+  len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
+  
+  // Keep in_buf same with out_buf, cheat later stage that this is in_buf
+  memcpy(in_buf, out_buf, len);
 
   /*********************
    * PERFORMANCE SCORE *
@@ -1843,23 +1854,35 @@ custom_mutator_stage:
   /*********************************************
    * CGI RANGE *
    *********************************************/
-  // DEBUGF("CGI RANGE\n");
-  /*range_pair_array: queue, saves the range variables of this round
-    cgi_range: global, saves all range variables*/
-  for (int i = 0; i < RANGE_COUNT; i++) {
+  
+  cgi_request_t *req = &afl->queue_cur->cgi_req;
+  for(int i = 0; i < req->count; i++) {
     
-    if (!afl->queue_cur->range_pair_array[i]) continue;
+    cgi_entry_t *item = &req->items[i];
+    int id = item->def_id;
+    // DEBUGF("Try item: %s, num: %d\n", item->key, g_var_defs[id].num_candidates);
+    
+    if (id < 0) continue;
+    if (g_var_defs[id].type == TYPE_FIX || g_var_defs[id].type == TYPE_RANDOM) continue;
 
-    char *old_value = afl->queue_cur->range_pair_array[i];
-    for (int j = 0; j < *(cgi_range[i].num); j++) {
-      // DEBUGF("cgi_range: %s\n", cgi_range[i].value[j]);
-      afl->queue_cur->range_pair_array[i] = cgi_range[i].value[j];
-      if (common_fuzz_stuff(afl, out_buf, len)) { goto abandon_entry; }
+    char *old_value = item->val;
+    for (int j = 0; j < g_var_defs[id].num_candidates; j++) {
+
+      char *candidate = g_var_defs[id].candidates[j];
+      if (strcmp(old_value, candidate) == 0) {
+          continue; 
+      }
+
+      item->val = candidate;
+      // DEBUGF("[CGI FUZZ] Fuzzing %s:%s\n", item->key, item->val);
+      if (common_fuzz_stuff(afl, out_buf, len)) { 
+        item->val = old_value;
+        goto abandon_entry; 
+      }
     }
+    item->val = old_value;
+  } 
 
-    afl->queue_cur->range_pair_array[i] = old_value;
-  }
-  // afl->cgi_regex_done = 1;
 
   /*******************
    * CUSTOM MUTATORS *
@@ -3514,6 +3537,9 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
+  /* CGI FUZZ */
+  u8 *mid_buf;
+
 #ifdef IGNORE_FINDS
 
   /* In IGNORE_FINDS mode, skip any entries that weren't in the
@@ -3572,6 +3598,9 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
 
   out_buf = afl_realloc(AFL_BUF_PARAM(out), len);
   if (unlikely(!out_buf)) { PFATAL("alloc"); }
+
+  mid_buf = afl_realloc(AFL_BUF_PARAM(mid), len);
+  if (unlikely(!mid_buf)) { PFATAL("alloc"); }
 
   afl->subseq_tmouts = 0;
 
@@ -3645,9 +3674,15 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
 
   }
 
-  restructure_inbuf(afl->queue_cur, in_buf);
+  //* CGI FUZZ */
+  // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
+  memcpy(mid_buf, in_buf, len);
 
-  memcpy(out_buf, in_buf, len);
+  // Cut mid_buf to vars, copy random var val alone to out_buf.
+  len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
+  
+  // Keep in_buf same with out_buf, cheat later stage that this is in_buf
+  memcpy(in_buf, out_buf, len);
   
   /*********************
    * PERFORMANCE SCORE *

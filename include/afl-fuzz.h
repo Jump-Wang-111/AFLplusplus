@@ -257,12 +257,12 @@ struct queue_entry {
   struct skipdet_entry *skipdet_e;
   
   /* CGI fuzz */
-  cgi_pair  *fix_pair_list;              
-  cgi_pair  *range_pair_list;            
-  cgi_pair  *random_pair_list;
+  // cgi_pair  *fix_pair_list;              
+  // cgi_pair  *range_pair_list;            
+  // cgi_pair  *random_pair_list;
   // u8        range_map[RANGE_COUNT];
-  char      *range_pair_array[RANGE_COUNT];
-  // char      *tmp_str[MAX_TEMP_STR];
+  // char      *range_pair_array[RANGE_COUNT];
+  cgi_request_t   cgi_req;
 };
 
 struct extra_data {
@@ -505,6 +505,7 @@ typedef struct afl_state {
   sharedmem_t     *cgi_feedback;
   sharedmem_t     *cgi_regex;
   u8              *new_buf;
+  u8              *mid_buf;
   map_str_t       cgi_regex_dedupe_map;
   time_t          last_gen_time;
 
@@ -1196,18 +1197,13 @@ u32  calculate_score(afl_state_t *, struct queue_entry *);
 
 /* CGI fuzz*/
 
+int  lookup_var_id(char *key);
 void print_stack_trace();
-void debug_pair_list(cgi_pair *);
-int  add_pair_list(cgi_pair **, cgi_pair *);
-void free_pair_list(cgi_pair *);
-u32  size_pair2str(cgi_pair *);
-u8*  pair2str(u8*, cgi_pair *);
-u32  size_array2str(cgi_pair *, char **, int );
-u8*  range_array2str(u8 *, cgi_pair *, char **, int );
-u8*  random_array2str(u8 *, cgi_pair *, char **, int );
-void trim_cgi_input(struct queue_entry *, u8 *);
-void restructure_inbuf(struct queue_entry *, u8 *);
-u8*  recombine_input(afl_state_t *, u8 *, u32);
+u8   in_cgi_req(struct queue_entry *q, char *name);
+u32  cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf);
+u8*  cgi_recombine_input(afl_state_t *afl, u8 *mutated_blob, u32 blob_len, u32 *out_len);
+void cgi_optimize_structure(afl_state_t *afl);
+u8   trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf);
 void setup_cgi_feedback_shmem(afl_state_t *);
 void setup_cgi_regex_shmem(afl_state_t *);
 void save_to_queue(afl_state_t *, void *, u32);

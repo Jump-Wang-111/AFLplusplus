@@ -1431,6 +1431,7 @@ inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
   }
 
   ck_read(fd, q->testcase_buf, len, q->fname);
+  // DEBUGF("Buf not cached, let's load it, read from %s, buf: %s\n", q->fname, q->testcase_buf);
   close(fd);
 
   /* Register testcase as cached */

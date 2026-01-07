@@ -445,7 +445,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /*******************************************
    * CALIBRATION (only if failed earlier on) *
    *******************************************/
-  if (getenv("AFL_DEBUG")) DEBUGF("in_buf before calibrate:\n%s\n", in_buf);
+  // if (getenv("AFL_DEBUG")) DEBUGF("in_buf before calibrate:\n%s\n", in_buf);
   if (unlikely(afl->queue_cur->cal_failed)) {
 
     u8 res = FSRV_RUN_TMOUT;
@@ -481,7 +481,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
   /************
    * TRIMMING *
    ************/
-  if (getenv("AFL_DEBUG")) DEBUGF("in_buf before TRIMMING:\n%s\n", in_buf);
+
   if (unlikely(!afl->non_instrumented_mode && !afl->queue_cur->trim_done &&
                !afl->disable_trim)) {
     

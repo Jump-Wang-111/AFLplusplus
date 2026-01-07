@@ -249,7 +249,10 @@ u32 cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf) {
 
     while (cursor < end && req->count < MAX_ENV_VARS) {
         
-        // 1. 定位 Key
+        // 处理多余的空行，即连续的\n
+		while (cursor < end && *cursor == '\n') cursor++;
+
+		// 1. 定位 Key
         char *key = (char*)cursor;
 		u8 *eq = (u8*)memchr(cursor, '=', end - cursor);
         if (!eq) break; 
@@ -450,7 +453,12 @@ void cgi_optimize_structure(afl_state_t *afl) {
         int should_delete = 0;
         cgi_entry_t *curr = &req->items[i];
 
-        // --- 策略 A: 检查重复 Key (保留第一个) ---
+        if (curr->key == NULL || curr->key[0] == '\0' || curr->key[0] == '\n') {
+            should_delete = 1;
+			goto SHOULD_DELETE;
+        }
+		
+		// --- 策略 A: 检查重复 Key (保留第一个) ---
         // 向前扫描 0 到 i-1，看是否出现过
         for (int j = 0; j < i; j++) {
             if (strcmp(req->items[j].key, curr->key) == 0) {
@@ -461,7 +469,7 @@ void cgi_optimize_structure(afl_state_t *afl) {
 
         // --- 策略 B: 检查空值 (可选) ---
         // if (strlen(curr->val) == 0) should_delete = 1;
-
+SHOULD_DELETE:
         if (should_delete) {
             // [数组删除操作]
             // 如果不是最后一个元素，需要把后面的向前搬移

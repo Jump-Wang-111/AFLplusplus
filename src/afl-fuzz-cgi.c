@@ -496,6 +496,8 @@ u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
     
     if (unlikely(afl->disable_trim)) return 0;
     
+	u32 orig_len = q->len;
+
     // 解析 (Parse)
     // 建立骨架，item->val 指向 in_buf
     cgi_parse_input(q, in_buf, q->len, NULL);
@@ -511,7 +513,7 @@ u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
 
     // 3. 检查并写回磁盘 (Commit)
     // 只要长度变了（通常是变小），或者你想强制格式化，就写回
-    if (clean_len != q->len) {
+    if (clean_len != orig_len) {
 
 		if(getenv("AFL_DEBUG")){
 			DEBUGF("[CGI FUZZ] Len changed after trim, write back\n");
@@ -527,11 +529,9 @@ u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
         q->len = clean_len;
         
     }
-
-	// 同步内存 buffer (非常重要！)
-	// 因为 fuzz_one 后面可能会继续用 in_buf，必须让它和磁盘保持一致
-	memcpy(in_buf, clean_buf, clean_len);
-	in_buf[clean_len] = 0;
+	else {
+		memcpy(in_buf, clean_buf, clean_len);
+	}
 
     // 返回 0 表示 Trim 完成（我们不需要 AFL 原生的二进制 Trim 循环）
     return 0;
@@ -1004,20 +1004,24 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 	if (out_buf == 0) return 0;
 
 	/* Feedback stage 0 */
+	u32 old_qd = afl->queued_discovered;
 	*(afl->fsrv.shmem_cgi_fb_stage) = 0;
+
 	u8 ret = common_fuzz_stuff(afl, out_buf, input_len);
 	if (ret) {
 		DEBUGF("common_fuzz_stuff return %d\n", ret);
 		return ret;
 	}
 
+	// only if this input is a new path, then we need to do feedback
+	if (afl->queued_discovered == old_qd) return ret;
+
 	u32 needed_size = input_len; // or afl_alloc_bufsize(out_buf) ?
 
-	// DEBUGF("cgi_feedback_num:%d\n", *(afl->fsrv.shmem_cgi_fb_num));
 	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
 		
 		/* 10% percent do feedback */
-		if (rand_below(afl, 100) < 90) continue;
+		// if (rand_below(afl, 100) < 90) continue;
 
 		/*  change feedbak
 			1st time: env_name

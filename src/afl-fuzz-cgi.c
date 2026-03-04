@@ -41,6 +41,30 @@ static char *c_paths[] = {
 
 char *g_path_info[1 << 12];
 
+// Usernames mapping to roles, we guess the role from reverse engineering: 
+// "admin"->4, "operator"->3, "user"->2, "guest"->1
+static char *c_usernames[] = {
+    "admin",    // Role 4
+    "operator", // Role 3
+    "user",     // Role 2
+    "guest"     // Role 1
+};
+
+static char *c_auth_values[] = {
+    "Basic YWRtaW46YWRtaW4=",         // admin:admin
+    "Basic b3BlcmF0b3I6b3BlcmF0b3I=", // operator:operator
+    "Basic dXNlcjp1c2Vy",             // user:user
+    "Basic Z3Vlc3Q6Z3Vlc3Q="          // guest:guest
+};
+
+// Passwords (kept simple to match usernames for convenience)
+// static char *c_passwords[] = {
+//     "admin",
+//     "operator",
+//     "user",
+//     "guest"
+// };
+
 /* 辅助宏：计算数组长度 */
 #define ARR_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -60,16 +84,16 @@ cgi_var_def_t g_var_defs[KNOWN_VAR_COUNT] = {
 	   (e.g., SSL mode, Authenticated mode).
        ========================================================= */
     
-    [HTTP_USERNAME] = { 
-        .key = "HTTP_USERNAME", 
-        .type = TYPE_FIX, 
-        .default_val = "admin" 
-    },
+    // [HTTP_USERNAME] = { 
+    //     .key = "HTTP_USERNAME", 
+    //     .type = TYPE_FIX, 
+    //     .default_val = "admin" 
+    // },
     
     [HTTP_PASSWORD] = { 
         .key = "HTTP_PASSWORD", 
         .type = TYPE_FIX, 
-        .default_val = "admin" // 或者 "password"
+        .default_val = "password" // 或者 "password"
     },
     
     [SERVER_ADMIN] = { 
@@ -149,6 +173,20 @@ cgi_var_def_t g_var_defs[KNOWN_VAR_COUNT] = {
         .candidates = c_protocols 
     },
 
+	[HTTP_USERNAME] = { 
+        .key = "HTTP_USERNAME", 
+        .type = TYPE_RANGE, 
+        .num_candidates = ARR_SIZE(c_usernames),
+        .candidates = c_usernames
+    },
+    
+    // [HTTP_PASSWORD] = { 
+    //     .key = "HTTP_PASSWORD", 
+    //     .type = TYPE_RANGE, 
+    //     .num_candidates = ARR_SIZE(c_passwords),
+    //     .candidates = c_passwords
+    // },
+
     /* --- Hybrid Variables (混合模式) --- */
     /* 既有 Candidates 用于 Range 注入，也允许随机变异 */
 
@@ -158,6 +196,14 @@ cgi_var_def_t g_var_defs[KNOWN_VAR_COUNT] = {
         .num_candidates = ARR_SIZE(c_content_types), 
         .candidates = c_content_types,
         .default_val = "application/x-www-form-urlencoded" // 默认值
+    },
+
+	[HTTP_AUTHORIZATION] = { 
+        .key = "HTTP_AUTHORIZATION", 
+        .type = TYPE_HYBRID, 
+        .num_candidates = ARR_SIZE(c_auth_values), 
+        .candidates = c_auth_values,
+        .default_val = "Basic YWRtaW46YWRtaW4=" 
     }
 };
 
@@ -251,11 +297,19 @@ u32 cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf) {
         
         // 处理多余的空行，即连续的\n
 		while (cursor < end && *cursor == '\n') cursor++;
+		
+		// 寻找当前行的结束位置
+        u8 *next_line = (u8*)memchr(cursor, '\n', end - cursor);
+        u8 *line_end = next_line ? next_line : end;
+		u8 *eq = (u8*)memchr(cursor, '=', line_end - cursor);
 
+        if (!eq) {
+			// 没有找到 '=', 这行格式不合法，跳过
+			cursor = line_end + 1; // 移动到下一行
+			continue;
+		} 
 		// 1. 定位 Key
         char *key = (char*)cursor;
-		u8 *eq = (u8*)memchr(cursor, '=', end - cursor);
-        if (!eq) break; 
         *eq = '\0'; // 原地切断 Key
 
         // 2. 定位 Value
@@ -450,8 +504,12 @@ void cgi_optimize_structure(afl_state_t *afl) {
 
 	// 双指针遍历，i 是当前考察的元素
     for (int i = 0; i < req->count; i++) {
+
         int should_delete = 0;
         cgi_entry_t *curr = &req->items[i];
+		// if (getenv("AFL_DEBUG")) {
+		// 	DEBUGF("[CGI FUZZ] Optimize, curr idx:%u, key: %s\n", i, curr->key);
+		// }
 
         if (curr->key == NULL || curr->key[0] == '\0' || curr->key[0] == '\n') {
             should_delete = 1;
@@ -485,7 +543,11 @@ SHOULD_DELETE:
             // 关键：i 回退一步，因为原来的 i+1 现在变成了 i，下轮需要重新检查它
             i--; 
         }
-    }
+		
+		// if (getenv("AFL_DEBUG")) {
+		// 	DEBUGF("[CGI FUZZ] Optimize, curr idx:%u, should delete: %u\n", i, should_delete);
+		// }
+	}
 }
 
 // TODO: 检查trim逻辑
@@ -729,7 +791,7 @@ void generate_regex(afl_state_t *afl) {
 	}
 	afl->fsrv.shmem_cgi_regex->num_of_regex = i;
 	g_var_defs[PATH_INFO].num_candidates = i;
-	DEBUGF("[CGI FUZZ] Now num of PATH_INFO: %d\n", g_var_defs[PATH_INFO].num_candidates);
+	// DEBUGF("[CGI FUZZ] Now num of PATH_INFO: %d\n", g_var_defs[PATH_INFO].num_candidates);
 
 	pid_t pid = fork();
     if (pid < 0) {
@@ -779,7 +841,7 @@ u8 hook_fuzz_one(afl_state_t *afl) {
 	
 	// save_interesting(afl, afl->queue_cur);
 
-	DEBUGF("One round over...\n");
+	// DEBUGF("One round over...\n");
 
 	return skip;
 }

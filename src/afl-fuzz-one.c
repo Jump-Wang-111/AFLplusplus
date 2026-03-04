@@ -1852,7 +1852,7 @@ skip_extras:
 custom_mutator_stage:
 
   /*********************************************
-   * CGI RANGE *
+   * CGI FUZZ *
    *********************************************/
   
   cgi_request_t *req = &afl->queue_cur->cgi_req;
@@ -1861,7 +1861,7 @@ custom_mutator_stage:
     cgi_entry_t *item = &req->items[i];
     int id = item->def_id;
     // DEBUGF("Try item: %s, num: %d\n", item->key, g_var_defs[id].num_candidates);
-    
+
     if (id < 0) continue;
     if (g_var_defs[id].type == TYPE_FIX || g_var_defs[id].type == TYPE_RANDOM) continue;
 

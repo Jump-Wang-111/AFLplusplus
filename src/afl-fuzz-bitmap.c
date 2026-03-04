@@ -843,7 +843,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
       }
 
 #ifndef SIMPLE_FILES
-      DEBUGF("write crash\n");
+      // DEBUGF("write crash\n");
       if (!afl->afl_env.afl_sha1_filenames) {
 
         snprintf(fn, PATH_MAX, "%s/crashes/id:%06llu,sig:%02u,%s%s%s",

@@ -40,8 +40,7 @@ typedef struct {
 // ID 映射枚举 (替代字符串比较)
 enum {
   // Fix
-  HTTP_USERNAME,
-  HTTP_PASSWORD,
+  HTTP_PASSWORD,                    // passwd not use, fix it
   SERVER_ADMIN,
   AUTH_TYPE,
   HTTPS,
@@ -55,9 +54,12 @@ enum {
   REQUEST_METHOD,
   HTTP_X_HTTP_METHOD_OVERRIDE,
   SERVER_PROTOCOL,
-
+  HTTP_USERNAME,                    // for our fuzz, this is enough,
+                                    // have or not -> login,
+                                    // content -> role
   // Hybrid
   CONTENT_TYPE,
+  HTTP_AUTHORIZATION,
 
   KNOWN_VAR_COUNT
 };
@@ -94,7 +96,8 @@ typedef struct regex_env {
 enum {
   FIX,
   RANGE,
-  RANDOM
+  RANDOM,
+  HYBRID
 };
 
 // enum {

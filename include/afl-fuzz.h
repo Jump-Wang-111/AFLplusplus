@@ -1198,6 +1198,7 @@ u32  calculate_score(afl_state_t *, struct queue_entry *);
 /* CGI fuzz*/
 
 int  lookup_var_id(char *key);
+void debug_cgi_request(struct queue_entry *q);
 void print_stack_trace();
 u8   in_cgi_req(struct queue_entry *q, char *name);
 u32  cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf);

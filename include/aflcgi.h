@@ -75,6 +75,12 @@ typedef struct {
 typedef struct {
   int         count;                  // 当前有多少个变量
   cgi_entry_t items[MAX_ENV_VARS];    // 数组替代链表
+  
+  // ====================================
+  // 新增：专为 CONTENT 预留的纯二进制存储区
+  // ====================================
+  u8            *content_ptr; 
+  u32           content_len;
 } cgi_request_t;
 
 extern cgi_var_def_t g_var_defs[KNOWN_VAR_COUNT];

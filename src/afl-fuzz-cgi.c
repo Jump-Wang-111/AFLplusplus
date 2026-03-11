@@ -314,6 +314,21 @@ u32 cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf) {
 
         // 2. 定位 Value
         char *val = (char*)(eq + 1);
+
+		// 【新增核心逻辑】：如果是 CONTENT，直接接管剩余所有数据
+		if (strcmp(key, "CONTENT") == 0) {
+			req->content_ptr = (u8*)val;
+			req->content_len = end - (u8*)val;
+			
+			// 如果需要填充 fuzz blob
+			if (blob_buf) {
+				memcpy(blob_cursor, req->content_ptr, req->content_len);
+				blob_cursor += req->content_len;
+			}
+			break; // 停止解析，剩余的数据全是 body
+		}
+
+		// 非CONTENT，继续处理行尾
         u8 *nl = (u8*)memchr((u8*)val, '\n', end - (u8*)val);
 		size_t vlen;
         
@@ -325,6 +340,12 @@ u32 cgi_parse_input(struct queue_entry *q, u8 *in_buf, u32 len, u8 *blob_buf) {
 			vlen = end - (u8*)val;
             cursor = end; // 最后一行
         }
+
+		// 【新增核心 2】：丢弃原有的 CONTENT_LENGTH
+		// 注意：必须放在 cursor 推进之后，这样 continue 才能正确跳到下一行！
+		if (strcmp(key, "CONTENT_LENGTH") == 0) {
+			continue; 
+		}
 
         // 3. 填充 Entry
         cgi_entry_t *item = &req->items[req->count++];
@@ -394,7 +415,8 @@ cgi_recombine_input(afl_state_t *afl, u8 *mutated_blob, u32 blob_len, u32 *out_l
 		total_len += strlen(item->val);
 		total_len += 1; // '\n'
 	}
-	total_len += 1; // null terminator
+	total_len += strlen("CONTENT=") + req->content_len;
+	total_len += 64; // for added CONTENT_LENGTH
 	total_len += blob_len;	// random val size
 	total_len += ENV_MAX_LEN; // 冗余
 
@@ -422,6 +444,19 @@ cgi_recombine_input(afl_state_t *afl, u8 *mutated_blob, u32 blob_len, u32 *out_l
 			out += v_len;
 			*out++ = '\n';
 		}
+
+		// 【新增】：在末尾补充唯一的 CONTENT_LENGTH 和原始 CONTENT
+        if (req->content_ptr) {
+            int cl_len = snprintf((char*)out, 64, "CONTENT_LENGTH=%u\n", req->content_len);
+            out += cl_len;
+
+            size_t c_k_len = strlen("CONTENT=");
+            memcpy(out, "CONTENT=", c_k_len);
+            out += c_k_len;
+
+            memcpy(out, req->content_ptr, req->content_len);
+            out += req->content_len;
+        }
 
 		*out_len = (u32)(out - new_buf);
 		*out = '\0'; // 补上结尾
@@ -488,6 +523,23 @@ cgi_recombine_input(afl_state_t *afl, u8 *mutated_blob, u32 blob_len, u32 *out_l
 		*out++ = '\n';
     }
     
+	u32 mutated_content_len = blob_end - blob_cursor;
+	if (mutated_content_len > 0) {
+        // 动态计算 CONTENT_LENGTH，防止 CGI 截断我们的变异 Body！
+        char cl_str[64];
+        int cl_len = snprintf(cl_str, sizeof(cl_str), "CONTENT_LENGTH=%u\n", mutated_content_len);
+        memcpy(out, cl_str, cl_len);
+        out += cl_len;
+
+        // 写入真正的 Payload
+        size_t k_len = strlen("CONTENT=");
+        memcpy(out, "CONTENT=", k_len);
+        out += k_len;
+        
+        memcpy(out, blob_cursor, mutated_content_len);
+        out += mutated_content_len;
+    }
+
 	*out_len = (u32)(out - new_buf);
     *out = '\0';
 

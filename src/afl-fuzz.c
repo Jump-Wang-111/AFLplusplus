@@ -125,6 +125,8 @@ static void usage(u8 *argv0, int more_help) {
   SAYF(
       "\n%s [ options ] -- /path/to/fuzzed_app [ ... ]\n\n"
 
+      "CGI Fuzz version.( With -k to use )\n"
+
       "Required parameters:\n"
       "  -i dir        - input directory with test cases (or '-' to resume, "
       "also see \n"

@@ -632,12 +632,14 @@ u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
 		if(getenv("AFL_DEBUG")){
 			DEBUGF("[CGI FUZZ] Len changed after trim, write back\n");
 		}
-        
-        s32 fd = open(q->fname, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-        if (fd < 0) PFATAL("Unable to open '%s'", q->fname);
-        
-        ck_write(fd, clean_buf, clean_len, q->fname);
-        close(fd);
+		
+		unlink(q->fname);                                    /* ignore errors */
+
+		s32 fd = open(q->fname, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+		if (fd < 0) { PFATAL("Unable to create '%s'", q->fname); }
+
+		ck_write(fd, clean_buf, clean_len, q->fname);
+		close(fd);
 
         // 更新 Input len
         q->len = clean_len;
@@ -805,8 +807,10 @@ void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 
 void save_data(afl_state_t *afl) {
 	FILE *fp;
+	char fn[100];
 
-	fp = fopen("path_info.txt", "w");
+	sprintf(fn, "%s/path_info.txt", afl->out_dir);
+	fp = fopen(fn, "w");
 	if (fp == NULL) {
 		perror("Error opening file");
 		return;
@@ -816,7 +820,8 @@ void save_data(afl_state_t *afl) {
 	}
 	fclose(fp);
 
-	fp = fopen("lose_env.txt", "w");
+	sprintf(fn, "%s/path_info.txt", afl->out_dir);
+	fp = fopen(fn, "w");
 	if (fp == NULL) {
 		perror("Error opening file");
 		return;
@@ -871,7 +876,7 @@ void check_and_gen_regex(afl_state_t *afl) {
 	
 	time_t current_time = time(NULL);
 	
-	if (difftime(current_time, afl->last_gen_time) >= 600) {
+	if (difftime(current_time, afl->last_gen_time) >= (600 + rand_below(afl, 120))) {
 		if (getenv("AFL_DEBUG"))
 			DEBUGF("Gen regex, cur time: %ld, last time: %ld\n", current_time, afl->last_gen_time);
 		generate_regex(afl);

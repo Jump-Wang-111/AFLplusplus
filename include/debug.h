@@ -418,7 +418,10 @@ static inline const char *colorfilter(const char *x) {
                                                                \
     s32 _len = (s32)(len);                                     \
     s32 _res = read(fd, buf, _len);                            \
-    if (_res != _len) RPFATAL(_res, "Short read from %s", fn); \
+    if (_res != _len) {                                         \
+      DEBUGF("Expect %d, read %d", _len, _res);                 \
+      RPFATAL(_res, "Short read from %s", fn);                  \
+    }                                                           \
                                                                \
   } while (0)
 

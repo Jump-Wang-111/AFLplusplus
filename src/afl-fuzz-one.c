@@ -515,15 +515,19 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   }
 
-  /* CGI FUZZ */
-  // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
-  memcpy(mid_buf, in_buf, len);
+  if (afl->cgi_fuzz == 1) {
 
-  // Cut mid_buf to vars, copy random var val alone to out_buf.
-  len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
-  
-  // Keep in_buf same with out_buf, cheat later stage that this is in_buf
-  memcpy(in_buf, out_buf, len);
+    /* CGI FUZZ */
+    // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
+    memcpy(mid_buf, in_buf, len);
+
+    // Cut mid_buf to vars, copy random var val alone to out_buf.
+    len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
+
+    // Keep in_buf same with out_buf, cheat later stage that this is in_buf
+    memcpy(in_buf, out_buf, len);
+
+  }
 
   /*********************
    * PERFORMANCE SCORE *
@@ -3674,15 +3678,19 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
 
   }
 
-  //* CGI FUZZ */
-  // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
-  memcpy(mid_buf, in_buf, len);
+  if (afl->cgi_fuzz == 1) {
 
-  // Cut mid_buf to vars, copy random var val alone to out_buf.
-  len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
-  
-  // Keep in_buf same with out_buf, cheat later stage that this is in_buf
-  memcpy(in_buf, out_buf, len);
+    /* CGI FUZZ */
+    // Keep copy of trimmed in_buf, which will be handled by cgi_parse_input,
+    memcpy(mid_buf, in_buf, len);
+
+    // Cut mid_buf to vars, copy random var val alone to out_buf.
+    len = cgi_parse_input(afl->queue_cur, mid_buf, len, out_buf);
+
+    // Keep in_buf same with out_buf, cheat later stage that this is in_buf
+    memcpy(in_buf, out_buf, len);
+
+  }
   
   /*********************
    * PERFORMANCE SCORE *
@@ -6289,4 +6297,3 @@ u8 fuzz_one(afl_state_t *afl) {
   return (key_val_lv_1 | key_val_lv_2);
 
 }
-

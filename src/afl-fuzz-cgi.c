@@ -41,6 +41,43 @@ static char *c_paths[] = {
 
 char *g_path_info[1 << 12];
 
+static u8 cgi_flag_value_enabled(const char *value, u8 default_value) {
+    if (!value || !*value) {
+        return default_value;
+    }
+
+    if (!strcmp(value, "0") || !strcmp(value, "off") ||
+        !strcmp(value, "false") || !strcmp(value, "no")) {
+        return 0;
+    }
+
+    if (!strcmp(value, "1") || !strcmp(value, "on") ||
+        !strcmp(value, "true") || !strcmp(value, "yes")) {
+        return 1;
+    }
+
+    return default_value;
+}
+
+static u8 cgi_flag_enabled_compat(const char *name, const char *legacy_name,
+                                  u8 default_value) {
+    const char *value = getenv(name);
+    if (!value || !*value) {
+        value = getenv(legacy_name);
+    }
+    return cgi_flag_value_enabled(value, default_value);
+}
+
+static u8 cgi_feedback_enabled(afl_state_t *afl) {
+    return afl->cgi_fuzz &&
+           cgi_flag_enabled_compat("CGI_ENABLE_FEEDBACK",
+                                   "AFL_CGI_ENABLE_FEEDBACK", 1);
+}
+
+static u8 cgi_regex_enabled(afl_state_t *afl) {
+    return cgi_feedback_enabled(afl);
+}
+
 // Usernames mapping to roles, we guess the role from reverse engineering: 
 // "admin"->4, "operator"->3, "user"->2, "guest"->1
 static char *c_usernames[] = {
@@ -67,6 +104,7 @@ static char *c_auth_values[] = {
 
 /* 辅助宏：计算数组长度 */
 #define ARR_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#define CGI_FEEDBACK_MAX_PAIRS 64
 
 
 /* =========================================================
@@ -654,6 +692,17 @@ u8 trim_cgi_input(afl_state_t *afl, struct queue_entry *q, u8 *in_buf) {
 }
 
 void setup_cgi_feedback_shmem(afl_state_t *afl) {
+    afl->fsrv.shmem_cgi_fb_num = NULL;
+    afl->fsrv.shmem_cgi_fb_stage = NULL;
+    afl->fsrv.shmem_cgi_fb_target = NULL;
+    afl->fsrv.shmem_cgi_fb_pair = NULL;
+    afl->fsrv.shmem_cgi_fb_tlen = NULL;
+    afl->fsrv.shmem_cgi_fb_buf = NULL;
+    unsetenv(SHM_CGI_FD_ENV_VAR);
+
+    if (!cgi_feedback_enabled(afl)) {
+        return;
+    }
 
 	afl->cgi_feedback = ck_alloc(sizeof(sharedmem_t));
 
@@ -676,6 +725,10 @@ void setup_cgi_feedback_shmem(afl_state_t *afl) {
 }
 
 void init_range(afl_state_t *afl) {
+	if (!afl->fsrv.shmem_cgi_regex) {
+		return;
+	}
+
 	// cgi_range[PATH_INFO].key		= afl->fsrv.shmem_cgi_regex->env_name;
 	// cgi_range[PATH_INFO].num		= &(afl->fsrv.shmem_cgi_regex->num_of_regex);
 	// for (int i = 0; i < 4096; i++) {
@@ -691,6 +744,12 @@ void init_range(afl_state_t *afl) {
 }
 
 void setup_cgi_regex_shmem(afl_state_t *afl) {
+	afl->fsrv.shmem_cgi_regex = NULL;
+	unsetenv(SHM_CGI_RE_ENV_VAR);
+
+	if (!cgi_regex_enabled(afl)) {
+		return;
+	}
   
 	afl->cgi_regex = ck_alloc(sizeof(sharedmem_t));
 
@@ -756,6 +815,9 @@ void save_to_queue(afl_state_t *afl, void *mem, u32 len) {
 }
 
 void save_interesting(afl_state_t *afl, struct queue_entry *q) {
+	if (!cgi_feedback_enabled(afl) || !afl->fsrv.shmem_cgi_fb_num) {
+		return;
+	}
 
 	/* Check new env */
 	char *cgi_feedback_buf    =   afl->fsrv.shmem_cgi_fb_buf;
@@ -806,6 +868,10 @@ void save_interesting(afl_state_t *afl, struct queue_entry *q) {
 }
 
 void save_data(afl_state_t *afl) {
+	if (!cgi_feedback_enabled(afl) || !afl->fsrv.shmem_cgi_fb_num) {
+		return;
+	}
+
 	FILE *fp;
 	char fn[100];
 
@@ -820,7 +886,7 @@ void save_data(afl_state_t *afl) {
 	}
 	fclose(fp);
 
-	sprintf(fn, "%s/path_info.txt", afl->out_dir);
+	sprintf(fn, "%s/feedback_env.txt", afl->out_dir);
 	fp = fopen(fn, "w");
 	if (fp == NULL) {
 		perror("Error opening file");
@@ -833,6 +899,9 @@ void save_data(afl_state_t *afl) {
 }
 
 void generate_regex(afl_state_t *afl) {
+	if (!cgi_regex_enabled(afl) || !afl->fsrv.shmem_cgi_regex) {
+		return;
+	}
 
 	for (int i = 0; i < afl->fsrv.shmem_cgi_regex->num_of_regex; i++) {
 		map_set(&afl->cgi_regex_dedupe_map, afl->fsrv.shmem_cgi_regex->path_info_r[i], 1);
@@ -873,6 +942,9 @@ void generate_regex(afl_state_t *afl) {
 }
 
 void check_and_gen_regex(afl_state_t *afl) {
+	if (!cgi_regex_enabled(afl) || !afl->fsrv.shmem_cgi_regex) {
+		return;
+	}
 	
 	time_t current_time = time(NULL);
 	
@@ -889,12 +961,20 @@ u8 hook_fuzz_one(afl_state_t *afl) {
 
 	u8 skip = fuzz_one(afl);
 
+	if (!afl->cgi_fuzz) {
+		return skip;
+	}
+
 	/*	TODO: change generate_regex.
 		Generating regex now only run once.
 	*/ 
-	check_and_gen_regex(afl);
+	if (cgi_regex_enabled(afl)) {
+		check_and_gen_regex(afl);
+	}
 
-	save_data(afl);
+	if (cgi_feedback_enabled(afl)) {
+		save_data(afl);
+	}
 	
 	// save_interesting(afl, afl->queue_cur);
 
@@ -1024,32 +1104,47 @@ void save_crash(afl_state_t *afl, void *mem, u32 len) {
 
 
 void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u32 len) {
-	
-	// char *eq = strchr(env, '=');
-	// if (!eq) {
-	// 	WARNF("Error in feedback stage2: No \'=\' in feedback env str.");
-	// 	return;
-	// }
-	// char *info = eq + 1;
-
 	if (!strcmp(env_name, "PATH_INFO")) {
 		DEBUGF("Skip PATH_INFO in feedback stage2");
 		return;
 	}
 
-	char *info = env;
-	char fb_all[64][ENV_MAX_LEN];
-	char func_all[64][128];
+	u32 pair_count = *(afl->fsrv.shmem_cgi_fb_pair);
+	u32 tlen = *(afl->fsrv.shmem_cgi_fb_tlen);
+	if (!pair_count || !tlen) {
+		return;
+	}
 
-	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_pair); i++) {
+	if (pair_count > CGI_FEEDBACK_MAX_PAIRS) {
+		if (getenv("AFL_DEBUG")) {
+			DEBUGF("Feedback pair count %u exceeds limit %u, truncating\n",
+			       pair_count, CGI_FEEDBACK_MAX_PAIRS);
+		}
+		pair_count = CGI_FEEDBACK_MAX_PAIRS;
+	}
+
+	char *info = env;
+	char *info_end = env + tlen;
+	char fb_all[CGI_FEEDBACK_MAX_PAIRS][ENV_MAX_LEN];
+	char func_all[CGI_FEEDBACK_MAX_PAIRS][128];
+
+	for (u32 i = 0; i < pair_count && info < info_end && *info; i++) {
 
 		char func[128];
 		char fb[ENV_MAX_LEN];
-		
-		info += sprintf(func, "%s", info) + 1;
-		// strcpy(func, info);
-		info += sprintf(fb, "%s", info) + 1;
-		// strcpy(fb, info + strlen(func) + 1);
+
+		size_t remain = (size_t)(info_end - info);
+		size_t func_len = strnlen(info, remain);
+		if (func_len == remain || func_len >= sizeof(func)) break;
+		memcpy(func, info, func_len + 1);
+		info += func_len + 1;
+
+		remain = (size_t)(info_end - info);
+		size_t fb_len = strnlen(info, remain);
+		if (fb_len == remain || fb_len >= sizeof(fb)) break;
+		memcpy(fb, info, fb_len + 1);
+		info += fb_len + 1;
+
 		strcpy(fb_all[i], fb);
 		strcpy(func_all[i], func);
 
@@ -1087,8 +1182,14 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 
 			FILE *fp = popen(cmd, "r");
 			char buffer[4096];
-			fgets(buffer, sizeof(buffer), fp);
+			if (!fp) goto next_loop;
+			if (!fgets(buffer, sizeof(buffer), fp)) {
+				pclose(fp);
+				goto next_loop;
+			}
 			pclose(fp);
+			buffer[strcspn(buffer, "\r\n")] = '\0';
+			if (!buffer[0]) goto next_loop;
 			
 			needed_size += snprintf(temp, sizeof(temp), "%s=%s\n", env_name, buffer) + 1;
 			out_buf = afl_realloc(AFL_BUF_PARAM(new), needed_size);
@@ -1104,15 +1205,22 @@ void feedback_stage2(afl_state_t *afl, char *env, char *env_name, u8 *out_buf, u
 		u8 ret = common_fuzz_stuff(afl, out_buf, needed_size - 1);
 next_loop:
 	}
-	
-	// if (ret) return ret;
 }
 
 
 u8 __attribute__((hot)) 
 hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
+	if (!afl->cgi_fuzz) {
+		return common_fuzz_stuff(afl, out_buf, len);
+	}
+
+	u8 feedback_enabled = cgi_feedback_enabled(afl) &&
+	                      afl->fsrv.shmem_cgi_fb_num != NULL &&
+	                      afl->fsrv.shmem_cgi_fb_stage != NULL;
 	
-	memset(afl->fsrv.shmem_cgi_fb_num, 0, sizeof(u32) * 5);
+	if (feedback_enabled) {
+		memset(afl->fsrv.shmem_cgi_fb_num, 0, sizeof(u32) * 5);
+	}
 	// int   cgi_feedback_num		= *(afl->fsrv.shmem_cgi_fb_num);
 	// int   cgi_feedback_stage	= *(afl->fsrv.shmem_cgi_fb_stage);
 	// int   cgi_feedback_target	= *(afl->fsrv.shmem_cgi_fb_target);
@@ -1124,11 +1232,17 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
 	/* Feedback stage 0 */
 	u32 old_qd = afl->queued_discovered;
-	*(afl->fsrv.shmem_cgi_fb_stage) = 0;
+	if (feedback_enabled) {
+		*(afl->fsrv.shmem_cgi_fb_stage) = 0;
+	}
 
 	u8 ret = common_fuzz_stuff(afl, out_buf, input_len);
 	if (ret) {
 		DEBUGF("common_fuzz_stuff return %d\n", ret);
+		return ret;
+	}
+
+	if (!feedback_enabled) {
 		return ret;
 	}
 
@@ -1191,6 +1305,9 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
 u8 hook_calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
                   u32 handicap, u8 from_queue) {
+	if (!cgi_feedback_enabled(afl) || !afl->fsrv.shmem_cgi_fb_stage) {
+		return calibrate_case(afl, q, use_mem, handicap, from_queue);
+	}
 	
 	int temp = *(afl->fsrv.shmem_cgi_fb_stage);
 	

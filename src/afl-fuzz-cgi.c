@@ -78,6 +78,43 @@ static u8 cgi_regex_enabled(afl_state_t *afl) {
     return cgi_feedback_enabled(afl);
 }
 
+static u8 qentry_dict_feedback_entry(const char *entry) {
+    return entry &&
+           !strncmp(entry, QENTRY_DICT_PREFIX, strlen(QENTRY_DICT_PREFIX));
+}
+
+static void add_qentry_dict_token(afl_state_t *afl, const char *prefix,
+                                  const char *key) {
+    char token[MAX_AUTO_EXTRA + 1];
+    u32 before = afl->a_extras_cnt;
+    int written = snprintf(token, sizeof(token), "%s%s=", prefix, key);
+    if (written <= 0 || written >= (int)sizeof(token)) {
+        return;
+    }
+
+    maybe_add_auto(afl, (u8 *)token, (u32)written);
+
+    if (getenv("AFL_DEBUG")) {
+        DEBUGF("QENTRY auto token: %s (%s, auto_extras %u -> %u)\n", token,
+               afl->a_extras_cnt > before ? "new-or-reshuffled" : "existing-or-skipped",
+               before, afl->a_extras_cnt);
+    }
+}
+
+static void add_qentry_feedback_tokens(afl_state_t *afl, const char *entry) {
+    const char *key = entry + strlen(QENTRY_DICT_PREFIX);
+    size_t key_len = strnlen(key, ENV_NAME_MAX_LEN);
+
+    if (!key_len || key_len >= ENV_NAME_MAX_LEN) {
+        return;
+    }
+
+    add_qentry_dict_token(afl, "", key);
+    add_qentry_dict_token(afl, ";", key);
+    add_qentry_dict_token(afl, "; ", key);
+    add_qentry_dict_token(afl, "&", key);
+}
+
 // Usernames mapping to roles, we guess the role from reverse engineering: 
 // "admin"->4, "operator"->3, "user"->2, "guest"->1
 static char *c_usernames[] = {
@@ -1246,6 +1283,14 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 		return ret;
 	}
 
+	for (int i = 0; i < *(afl->fsrv.shmem_cgi_fb_num); i++) {
+		char *env = cgi_feedback_buf + i * FD_ENTRY_LEN;
+
+		if (qentry_dict_feedback_entry(env)) {
+			add_qentry_feedback_tokens(afl, env);
+		}
+	}
+
 	// only if this input is a new path, then we need to do feedback
 	if (afl->queued_discovered == old_qd) return ret;
 
@@ -1260,6 +1305,8 @@ hook_common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 			1st time: env_name
 			2nd time: env_name=target */ 
 		char *env = cgi_feedback_buf + i*FD_ENTRY_LEN;
+
+		if (qentry_dict_feedback_entry(env)) continue;
 		
 		char env_name[ENV_NAME_MAX_LEN];
 		strcpy(env_name, env);

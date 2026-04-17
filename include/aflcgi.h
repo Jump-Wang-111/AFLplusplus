@@ -21,6 +21,7 @@
 #define FD_ENTRY_LEN 4096 * 4
 
 #define NEW_ENV_FLAG        "NEW_ENV"
+#define QENTRY_DICT_PREFIX  "__AFL_QENTRY_DICT__:"
 
 typedef enum {
   TYPE_FIX,       // Fix (eg AUTH_TYPE)
